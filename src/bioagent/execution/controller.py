@@ -13,6 +13,7 @@ from pydantic import JsonValue, ValidationError
 
 from bioagent.artifacts.manager import ArtifactManager
 from bioagent.artifacts.manifest import (
+    AgentContext,
     ApprovalRecord,
     ArtifactRecord,
     AttemptRecord,
@@ -62,9 +63,7 @@ class ExecutionResult:
 
 
 def calculate_plan_hash(plan: AnalysisPlan) -> str:
-    validated = AnalysisPlan.model_validate(
-        plan.model_dump(mode="python", round_trip=True)
-    )
+    validated = AnalysisPlan.model_validate(plan.model_dump(mode="python", round_trip=True))
     payload = validated.model_dump(mode="json", exclude_none=True)
     canonical_json = json.dumps(
         payload,
@@ -125,6 +124,7 @@ class ExecutionController:
     ) -> ExecutionResult:
         self._require_execution_status(state)
         plan, revision, plan_hash, approval = self._approved_plan(state)
+        agent_context = self._agent_context(state)
         run_id = self._run_id(state)
         if state.get("dataset_id") not in {None, plan.dataset_id}:
             raise ExecutionRejectedError("DATASET_ID_MISMATCH")
@@ -155,6 +155,7 @@ class ExecutionController:
             run_id,
             plan,
             input_hashes,
+            agent_context,
         )
         recovered_attempts, recovered_artifacts = self._recover_orphan_attempts(
             run_id=run_id,
@@ -184,6 +185,7 @@ class ExecutionController:
                 run_records=(*input_records, plan_record),
                 snapshot_paths=snapshot_paths,
                 execution_key=execution_key,
+                agent_context=agent_context,
             )
         if reused is not None:
             return reused
@@ -204,6 +206,7 @@ class ExecutionController:
             snapshot_paths=snapshot_paths,
             execution_key=execution_key,
             cancelled=cancelled,
+            agent_context=agent_context,
         )
 
     def execution_key(self, state: Mapping[str, object]) -> str:
@@ -287,9 +290,7 @@ class ExecutionController:
             raise ExecutionRejectedError("DATASET_HASH_CHANGED")
         counts_artifact_id = f"input/counts{counts_path.suffix}"
         metadata_artifact_id = f"input/metadata{metadata_path.suffix}"
-        counts_record = self._artifact_manager.write_bytes(
-            run_id, counts_artifact_id, counts_bytes
-        )
+        counts_record = self._artifact_manager.write_bytes(run_id, counts_artifact_id, counts_bytes)
         metadata_record = self._artifact_manager.write_bytes(
             run_id, metadata_artifact_id, metadata_bytes
         )
@@ -325,12 +326,11 @@ class ExecutionController:
         snapshot_paths: tuple[Path, Path],
         execution_key: str,
         cancelled: CancellationCheck | None,
+        agent_context: AgentContext | None,
     ) -> ExecutionResult:
         attempt_id = str(uuid4())
         started_at = self._now()
-        attempt_dir = self._artifact_manager.resolve(
-            run_id, f"attempts/{attempt_id}"
-        )
+        attempt_dir = self._artifact_manager.resolve(run_id, f"attempts/{attempt_id}")
         attempt_dir.mkdir()
         running_attempt = AttemptRecord(
             attempt_id=UUID(attempt_id),
@@ -353,11 +353,7 @@ class ExecutionController:
                 cancelled=cancelled,
             )
             qc = self._validate_outputs(plan, validation, spec, attempt_dir)
-            status = (
-                RunStatus.FAILED
-                if qc.status is QCStatus.FAIL
-                else RunStatus.COMPLETED
-            )
+            status = RunStatus.FAILED if qc.status is QCStatus.FAIL else RunStatus.COMPLETED
         except Exception as error:
             status = (
                 RunStatus.CANCELLED
@@ -372,9 +368,7 @@ class ExecutionController:
                 status=status,
                 qc=qc,
             )
-            attempt_records = self._finish_attempt(
-                run_id, terminal_attempt, spec
-            )
+            attempt_records = self._finish_attempt(run_id, terminal_attempt, spec)
             self._write_terminal_manifest(
                 run_id=run_id,
                 plan=plan,
@@ -390,6 +384,7 @@ class ExecutionController:
                     *recovered_artifacts,
                     *attempt_records,
                 ),
+                agent_context=agent_context,
             )
             return ExecutionResult(
                 attempt_id=attempt_id,
@@ -418,6 +413,7 @@ class ExecutionController:
             recovered_attempts=recovered_attempts,
             attempt=terminal_attempt,
             artifacts=(*run_records, *recovered_artifacts, *attempt_records),
+            agent_context=agent_context,
         )
         return ExecutionResult(
             attempt_id=attempt_id,
@@ -442,6 +438,7 @@ class ExecutionController:
         run_records: Sequence[ArtifactRecord],
         snapshot_paths: tuple[Path, Path],
         execution_key: str,
+        agent_context: AgentContext | None,
     ) -> ExecutionResult | None:
         if (
             previous is None
@@ -453,19 +450,13 @@ class ExecutionController:
         ):
             return None
         current_attempt = next(
-            (
-                attempt
-                for attempt in previous.attempts
-                if attempt.attempt_id == previous.attempt_id
-            ),
+            (attempt for attempt in previous.attempts if attempt.attempt_id == previous.attempt_id),
             None,
         )
         if current_attempt is None or current_attempt.status is not RunStatus.COMPLETED:
             return None
         attempt_id = str(current_attempt.attempt_id)
-        attempt_dir = self._artifact_manager.resolve(
-            run_id, f"attempts/{attempt_id}"
-        )
+        attempt_dir = self._artifact_manager.resolve(run_id, f"attempts/{attempt_id}")
         if not self._parameters_match(
             attempt_dir / "parameters.json",
             plan=plan,
@@ -527,6 +518,7 @@ class ExecutionController:
                     previous.artifacts,
                     (*run_records, qc_record, *collected),
                 ),
+                "agent_context": agent_context,
             }
         )
         self._artifact_manager.write_manifest(run_id, manifest)
@@ -647,6 +639,7 @@ class ExecutionController:
         recovered_attempts: Sequence[AttemptRecord],
         attempt: AttemptRecord,
         artifacts: Sequence[ArtifactRecord],
+        agent_context: AgentContext | None,
     ) -> None:
         prior_approvals = previous.approvals if previous is not None else ()
         prior_attempts = previous.attempts if previous is not None else ()
@@ -676,6 +669,7 @@ class ExecutionController:
                 "approvals": self._merge_approvals(prior_approvals, approval),
                 "attempts": (*prior_attempts, *recovered_attempts, attempt),
                 "artifacts": self._merge_artifacts(prior_artifacts, artifacts),
+                "agent_context": agent_context,
             }
         )
         self._artifact_manager.write_manifest(run_id, manifest)
@@ -722,6 +716,7 @@ class ExecutionController:
         run_id: str,
         plan: AnalysisPlan,
         input_hashes: Mapping[str, str],
+        agent_context: AgentContext | None = None,
     ) -> None:
         if previous is None:
             return
@@ -731,6 +726,18 @@ class ExecutionController:
             raise ExecutionRejectedError("RUN_DATASET_MISMATCH")
         if dict(previous.input_hashes) != dict(input_hashes):
             raise ExecutionRejectedError("RUN_INPUT_HASH_MISMATCH")
+        if previous.agent_context != agent_context:
+            raise ExecutionRejectedError("RUN_AGENT_CONTEXT_MISMATCH")
+
+    @staticmethod
+    def _agent_context(state: Mapping[str, object]) -> AgentContext | None:
+        value = state.get("agent_context")
+        if value is None:
+            return None
+        try:
+            return AgentContext.model_validate(value)
+        except ValidationError as error:
+            raise ExecutionRejectedError("AGENT_CONTEXT_INVALID") from error
 
     def _recover_orphan_attempts(
         self,
@@ -741,8 +748,7 @@ class ExecutionController:
     ) -> tuple[tuple[AttemptRecord, ...], tuple[ArtifactRecord, ...]]:
         attempts_root = self._artifact_manager.resolve(run_id, "attempts")
         referenced = {
-            str(attempt.attempt_id)
-            for attempt in (() if previous is None else previous.attempts)
+            str(attempt.attempt_id) for attempt in (() if previous is None else previous.attempts)
         }
         recovered: list[AttemptRecord] = []
         artifacts: list[ArtifactRecord] = []
@@ -776,7 +782,8 @@ class ExecutionController:
                 )
                 artifacts.extend(self._finish_attempt(run_id, attempt, spec))
             elif (
-                attempt.status not in {
+                attempt.status
+                not in {
                     RunStatus.COMPLETED,
                     RunStatus.FAILED,
                     RunStatus.CANCELLED,
@@ -786,9 +793,7 @@ class ExecutionController:
             ):
                 raise ExecutionRejectedError("ATTEMPT_RECORD_INVALID")
             else:
-                artifacts.extend(
-                    self._collect_attempt_records(run_id, attempt_dir.name, spec)
-                )
+                artifacts.extend(self._collect_attempt_records(run_id, attempt_dir.name, spec))
             recovered.append(attempt)
         return tuple(recovered), tuple(artifacts)
 

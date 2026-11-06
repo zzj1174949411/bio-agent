@@ -6,15 +6,15 @@
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task 15 本地流程已接通；用户于 2026-09-08 决定先跳过真实模型 API 实验，后续自行接入。以 Mock Planner 验证本地完整流程；远端发布与剩余手工演示尚未关闭。
+**当前阶段：** Task 20 已完成 React 工作台与模型设置；前端测试、类型检查、构建、后端回归和提交门禁通过。下一编号任务为 21（启动、浏览器验收和门禁），本次停在任务 20 检查点。Task 15 的旧远端发布与剩余手工演示状态独立保留。
 
 ## 恢复工作时先做什么
 
 1. 进入 `.worktrees/bio-agent-mvp`。
 2. 阅读根目录 `AGENTS.md`、已批准设计、实施计划和本文件。
 3. 运行 `git status --short --branch` 和 `git log -5 --oneline`。
-4. 保留 Task 15 当前工作，先查看本文件末尾的范围调整与发布状态。
-5. Task 15 故障修复单独收尾；用户新增工作台需求正在设计，按下文已确认的 Web/GEO 方向继续，不混入当前修复提交。自动模型测试仍使用 Mock；真实调用仅在用户联调任务范围内进行。剩余发布检查通过前不标记 Ready for review。
+4. 阅读下文“下一阶段设计与计划”，再读取 2026-09-08 工作台设计/计划；保留 Task 15 的历史发布记录。
+5. 只领取任务 21，不把 GEO 或 MCP 提前混入。自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过。16–19 整体复盘已完成；任务 20 是当前已完成检查点。
 
 ## 已完成
 
@@ -249,7 +249,7 @@ Task 14 验证记录：
 
 收缩修复后完整 `scripts/check.ps1` 退出 0：Python suite 354 passed/1 skipped/1 deselected，R/端到端 5 passed，合计 359 passed/1 skipped；R testthat 37 passed，renv restore/严格 status、Ruff、mypy 均通过。真实 API 在 shrink=false/true 两种情况下均完成 QC、报告、manifest 与全文件哈希校验。独立科学/契约复核无 Important。用户需重启后端并新建运行、重新审阅审批；旧失败 run 保留审计证据。
 
-用户新增下一阶段需求：类似 Codex 的工作台、数据库编号下载分析、可配置 Skills/MCP/多模型。已明确选择本地 Web 工作台优先、GEO GSE counts 与样本信息优先。属于下一阶段待确认设计，尚未实现；现有 Task 15 故障修复继续独立收尾。
+用户新增下一阶段需求：类似 Codex 的工作台、数据库编号下载分析、可配置 Skills/MCP/多模型。已明确选择本地 Web 工作台优先、GEO GSE counts 与样本信息优先，并于 2026-09-08 确认阶段顺序；规格与实施计划见“下一阶段设计与计划”。尚未实现新功能，Task 15 修复保留独立提交。
 
 用户启动正式后端后报告 `/plan` 返回 409。只读核验 run `d93e5f71-6ace-4e68-b179-fd5cdb26d15b` 为 `VALIDATION_FAILED/PLANNER_FAILED`；409 是尚无计划的结果。针对该故障，使用固定合成摘要手工诊断，未传用户上传内容：真实 DeepSeek 先返回 400 `This response_format type is unavailable now`，显式 function calling 后返回 400 `Thinking mode does not support this tool_choice`。规划器选择 function calling、DeepSeek 工厂关闭 thinking 后，同一合成摘要通过生产规划器得到合法 AD/Control 计划。没有打印/保存 Key，没有审批或执行该用户 run；这次定向故障诊断不等于关闭完整真实模型 UI 验收。
 
@@ -298,16 +298,142 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 
 手工审批仍是实际边界：代理执行手工演示需要明确授权，Mock 自动测试不是对真实用户审批的替代。真实模型能力与 Mock 策略 eval 也必须分开陈述。用户已将真实模型联调移至后续；当前本地流程包含上传校验、结构化计划、审批门、DESeq2、QC/图表/HTML、manifest 下载及恢复。远端 CI 和剩余手工演示状态独立保留，不影响这一范围决定。
 
+## Task 16 项目、对话和事务存储
+
+- 工作目录为 `.worktrees/bio-agent-mvp`，分支 `agent/bio-agent-mvp`，起点 `b4724e1`；开始时工作区干净，分支领先 origin 7 个提交。
+- 新增冻结且拒绝未知字段的 Project、Conversation、Message、Turn、Event；记录带 `updated_at`，消息保留 `turn_id`、dataset UUID 与 `partial`。`TurnModelSnapshot` 仅是任务 16 持久化所需的非凭据字段契约；任务 17 应复用或整合该契约，尚无 profile 管理、凭据或模型客户端实现。
+- `Settings.workbench_db` 默认为 `data/workbench.sqlite`（位于现有忽略目录），与 checkpoint、run 索引和 manifest 独立。版本 0 向前迁移到 1；拒绝较新版本、未标版本的非空库、缺失关键表/索引及损坏外键，迁移失败整笔回滚，不重建旧数据库。
+- `BEGIN IMMEDIATE` 同事务先检查 request 重复及 payload hash，再检查 active turn，最后写 turn、用户消息及事件；唯一索引同时保证请求幂等、单 conversation 非终态 turn 和事件序号。不同 payload 返回 `REQUEST_ID_CONFLICT`，不同请求竞争返回 `TURN_BUSY`，`WAITING_USER` 继续占用对话。
+- 项目/对话支持创建、重命名和归档，不提供删除证据；消息与事件同事务保存。列表按更新时间/UUID 降序，默认 50、上限 100，游标绑定资源范围；事件按 conversation 内 seq 升序重放。新事件更新项目/对话活动时间。
+- 初始红灯：定向 pytest 因 `ModuleNotFoundError: No module named 'bioagent.workbench'` 收集失败。实现后首轮发现泛型 Page 的运行时类型绑定问题，修正后 11 passed。补充回归先复现活动排序未更新和缺失唯一索引未拒绝（2 failed/13 passed），修复后 15 passed。
+- 定向验收：`uv run --offline pytest tests/unit/workbench/test_workbench_store.py -v -p no:cacheprovider --basetemp=runs/task16-final` 为 **15 passed**。包含 6 连接同请求/异请求竞争、单实例跨线程、写事件故障注入回滚、20 次并发事件写入、分页同时间戳、外键所属、旧库重开、迁移原子性及 UTF-8 消息 16 KiB 边界。
+- `uv run --offline ruff check .` 通过；`uv run --offline mypy src` 通过（41 个源文件）。开始时既有 storage/domain 基线为 18 passed/1 skipped，唯一跳过为本机 Windows symlink 权限。
+- 既有 Python 回归：`uv run --offline pytest tests/unit tests/integration tests/evals -k 'not test_real_deseq2_runner_preserves_ad_vs_control_direction' -q -p no:cacheprovider --basetemp=runs/task16-regression` 为 **369 passed、1 skipped、1 deselected**（74.22 秒）。跳过项为原有 Windows symlink 权限；排除项是本次未改动的真实 R 集成，未重跑真实 R/testthat/e2e，不把本轮回归表述为完整统计验收。
+- 公共门禁：全仓 Ruff、mypy 41 源文件、`uv run --offline pre-commit run --all-files` 的 8 项 hooks、`git diff --check` 与 `git diff --cached --check` 均通过。缓存使用 `$env:TEMP/bio-agent-uv-cache` 和 `bio-agent-pre-commit-task15`；pytest 临时文件位于被忽略的 `runs/task16-*`。Git 索引写入与旧 hook 缓存读取遇到沙盒权限后，使用获准提权完成，未关闭 hooks。
+- 提交范围仅 7 个任务文件（3 个新包文件、1 个测试文件、config、计划与进度）；本地提交信息为 `feat(任务16): 建立工作台项目对话与事务事件存储`。提交后检查工作区状态；下一会话以 Git 实际状态为准。
+- 范围：仅任务 16；未接 API/SSE、队列、模型配置、真实模型、GEO、Skills 或 MCP。未更改 R/统计实现，未推送、合并或修改 Draft PR；任务 18 的整体复盘尚未到达。
+
+## Task 17 多模型配置、凭据和探针
+
+- 起点 `1542bf4`（任务 16），worktree 为 `.worktrees/bio-agent-mvp`，分支 `agent/bio-agent-mvp`；开始时干净，领先 origin 8 个提交。使用 executing-plans、TDD 和完成前验证流程，仅领取任务 17。
+- 新增 `models/{profiles,store,secrets,adapters}.py`：`ModelSnapshot` 复用任务 16 的 `TurnModelSnapshot`；profile 冻结、复制重验、公开字段白名单，URL 禁止 userinfo/query/fragment。配置进入同一个 workbench DB 的 `model_profiles` 表和独立 `model_schema_version`，不改 checkpoint 或历史 turn。
+- 配置更新要求 `expected_revision`，并发覆盖返回 `PROFILE_REVISION_CONFLICT`；删除后禁止用于新请求，已保存 turn 快照保持原值。DeepSeek/Ollama 环境配置投影为固定 ID、只读 profile，不经 API 写 `.env`。
+- 新增并锁定 keyring 25.7.0。`SecretStore.set/get/delete` 使用 `SecretStr`；系统后端限定 OS 凭据存储，拒绝未知、文件和链式 fallback，返回 `SECRET_STORE_UNAVAILABLE`，允许继续使用环境 profile。无凭据配置不访问 keyring；写入后 DB 仅保存内部引用，删除 profile 同时清除对应凭据。测试使用内存 SecretStore 和假 OS 后端，未访问真实系统凭据。[keyring API 依据](https://keyring.readthedocs.io/en/stable/)
+- 新 `ModelAdapter` 每次请求解析配置/凭据并创建客户端，无跨 revision 或凭据缓存；DeepSeek 固定 function calling + thinking disabled，Ollama 原生 function calling，兼容服务支持 function calling/json_schema。旧工厂签名及 DeepSeek/Ollama 参数契约保留，共用 DeepSeek 参数函数。
+- 固定探针仅由 `POST /api/v1/model-profiles/{id}/test` 触发，要求 `{"ok":true}`，60 秒总超时及请求超时，无自动重试/fallback，不发送用户数据。错误映射仅返回稳定白名单 code，不返回 provider body 或异常文本。
+- 新 `model_routes.py` 提供分页列表、创建/修改/删除、凭据写入/清除与探针；`GET /api/v1/workbench/bootstrap` 返回随机 CSRF token，`Cache-Control: no-store`。新端点和带 Origin 的浏览器请求检查 Host/Origin；旧 API 无 Origin 客户端保持原兼容行为。新写请求只认 `X-CSRF-Token`，实际请求体最大 32 KiB，422 不回显输入。生产同源；开发需显式设置 `BIOAGENT_LOCAL_DEV_ORIGIN=http://localhost:5173` 或对应 127.0.0.1:5173 origin，精确匹配，不增加任意来源 CORS。
+- TDD 红灯：两份新测试因 `ModuleNotFoundError: No module named 'bioagent.models'` 收集失败。实现后兼容 provider 的空 DeepSeek 参数触发 2 failed/33 passed，去掉该字段后通过。凭据补充回归先发现无凭据配置提前持有引用，调整为写凭据时登记、删除 profile 清理后通过。超时测试改为在 Mock 调用开始后推进可注入截止时间，避免用 10 ms 线程调度时间判断功能正确性。
+- 最终定向命令为 `uv run --offline pytest tests/unit/models/test_model_profiles.py tests/integration/api/test_model_profiles.py -v -p task17_isolation -p no:cacheprovider --basetemp=runs/task17-final`，**42 passed**。覆盖 profile/快照与凭据生命周期、并发 revision、环境只读、provider 参数、401/429/超时、无自动 fallback、CSRF/Host/Origin、分页和 API/日志/DB/快照脱敏；4 项使用真实 SDK + MockTransport 验证合法/非法 function calling 和 json_schema 输出。
+- 计划要求的 `tests/unit/llm tests/integration/api` 回归 **65 passed**（55.25 秒）；更广回归 `uv run --offline pytest tests/unit tests/integration tests/evals -k 'not test_real_deseq2_runner_preserves_ad_vs_control_direction' -q -p task17_isolation -p no:cacheprovider --basetemp=runs/task17-full-regression` 为 **411 passed、1 skipped、1 deselected**（73.76 秒）。跳过项为原有 Windows symlink 权限，排除项为真实 R 集成，不表述为完整统计验收。
+- 全仓 Ruff 通过，mypy **48 个源文件**通过，`uv run --offline pre-commit run --all-files` 的 **8 项 hooks 全部通过**；`git diff --check`、`git diff --cached --check` 通过。UV/PRE_COMMIT 缓存沿用任务 16 的临时目录；公开 keyring 依赖下载、Git 索引和旧 hook 缓存读取使用获准提权，未关闭 hooks。
+- 本地提交信息为 `feat(任务17): 增加多模型配置与系统凭据存储`，范围仅计划列出的 18 个实现、测试、依赖和状态文件；提交后核验 Git 状态，下一会话以实际 Git 为准。
+- 测试隔离：仅检查到 worktree 中 `.env` 存在，未读取内容。临时插件 `runs/task17-tools/task17_isolation.py` 在测试导入前关闭 Settings dotenv、清除模型/追踪环境变量，并把旧 API 测试的 workbench DB 定位到其临时 data_dir；通过 `PYTHONPATH=runs/task17-tools` 与 `-p task17_isolation` 加载，不修改生产 dotenv 行为。首次基线插件改变默认 DB 路径导致 1 个默认值断言失败，修正隔离方式后基线 **32 passed**。临时插件与测试数据库全部位于忽略的 runs 目录。
+- 本次不实现任务 18 的聊天队列/SSE/恢复，不接 GEO、Skills 或 MCP，不更改统计执行。未调用真实模型、读取真实 Key 或写真实 keyring；未重跑真实 R/testthat/e2e，不声称完成真实模型/系统凭据联调。任务 15 发布和 Draft PR 状态保留，不 push、不合并。
+
+## Task 18 后台对话、SSE 和恢复
+
+- 会话开始核对开发 worktree 与 `agent/bio-agent-mvp`；基线为任务 17 提交 `3bf578d`，工作区干净，未覆盖用户改动。
+- 新 `TurnService` 使用独立 asyncio worker 与最多 32 个排队 turn，提交返回 202；同一请求 ID 复用原 turn，冲突请求拒绝。模型配置在入队前固定，后续切换配置不改变在途快照；消息关联 dataset ID，模型只接收有限的完整消息上下文。
+- 新工作台路由提供项目/对话创建、修改/归档与分页、消息读取、turn 提交/查询/取消、澄清响应和 SSE，复用任务 17 的 Host/Origin/CSRF 保护。缺模型返回 `MODEL_NOT_CONFIGURED`，队列满 429，忙碌或旧澄清 request/revision 返回 409。
+- SSE 从已提交的事件记录分批读取 100 条；`after`/`Last-Event-ID` 取较大合法值，非法游标 422，空闲 15 秒注释心跳。事件种类白名单与单行结构化 JSON 阻止正文注入控制行；断连只结束读取，不取消后台 turn。
+- 部分消息与事件同事务写入；完成消息与完成 turn 同事务提交。取消先持久化终态/标记，迟到输出由存储边界拒绝。启动将未终止 turn 标为 `FAILED / TURN_INTERRUPTED`，保留部分消息，不自动重放模型请求；重复启动不重复失败事件。
+- WAITING_USER 保留澄清 request/revision，只有匹配响应才能重新入队。当前 `Clarification` 仅来自可信内部 driver，普通模型文本不解析为动作；任务 19 的动作白名单、分析服务与审批衔接尚未实施。
+- TDD 红灯：两份新测试因缺少 events/turns 模块收集失败。首次测试中的迟到片段同步标记放在 yield 后导致等待未结束，已中断该测试进程、前移标记并增加有界等待。复盘补充的流关闭测试先失败，随后用 `aclosing` 修复澄清提前退出时 driver 流未及时关闭的问题。
+- 最终定向命令 `uv run --offline pytest tests/unit/workbench/test_turn_service.py tests/integration/api/test_workbench.py -v -p task17_isolation -p no:cacheprovider --basetemp=runs/task18-final --tb=short`：**29 passed**（3.69 秒）。覆盖慢模型与跨对话并发、幂等/快照、32 项队列上限、取消竞争、澄清版本、重启、SSE 游标/注入/分页/心跳/有界断连，以及完成事务故障回滚和 Mock driver 脱敏。
+- 计划要求的 `tests/unit/workbench tests/integration/api` 回归：**92 passed**（54.85 秒）。更广命令 `uv run --offline pytest tests/unit tests/integration tests/evals -k 'not test_real_deseq2_runner_preserves_ad_vs_control_direction' -q -p task17_isolation -p no:cacheprovider --basetemp=runs/task18-full-regression --tb=short`：**440 passed、1 skipped、1 deselected**（73.31 秒）。跳过项为原有 Windows symlink 权限；排除项为真实 R 集成，不表述为完整统计验收。
+- 全仓 Ruff 通过，mypy **51 个源文件**通过，`uv run --offline pre-commit run --all-files` 的 **8 项 hooks 全通过**。`git diff --check` 与 `git diff --cached --check` 通过；提交保留 hooks，下一会话以实际 Git 为准。
+- 测试沿用任务 17 的忽略目录隔离插件，禁用 dotenv 读取并清除模型/追踪环境；未读取真实 `.env`/Key，未访问真实 keyring 或调用真实模型。临时数据库与插件不暂存。未重跑真实 R/testthat/e2e，未 push、合并或更改 PR。
+- 本地提交信息为 `feat(任务18): 接通后台对话事件与重连恢复`，范围仅计划列出的 9 个实现/测试文件与 2 个计划/进度文件。下一任务 19 未开始。
+
+## 任务 16–18 整体复盘
+
+- 存储边界：工作台 SQLite 保存项目、对话、turn 与事件，模型 profile 使用独立版本表；LangGraph checkpoint 与 manifest/artifact 的科研证据职责保持独立。新增 turn JSON 字段有兼容默认值，原存储测试仍通过；请求去重、单会话非终态唯一约束和事务事件序号继续由确定性代码保证。
+- 凭据边界：快照仅含非秘密配置；凭据通过系统后端/环境引用解析，聊天客户端与凭据只保留在请求内存中。任务 17 与 18 的 Mock 测试覆盖 API、日志、DB、快照不含虚拟秘密，当前改动未把凭据传入 checkpoint/manifest；未读取真实凭据验证。
+- 执行边界：聊天队列独立于统计 JobRunner；API 测试显式监视并断言聊天不调用 R 队列 submit，既有队列/API Python 回归通过。本阶段未接分析动作，不会通过聊天创建统计 attempt 或代替人工批准；真实 R 运行未重验。
+- 生命周期：持久化先于 SSE 投影，断连不拥有任务生命周期；取消与完成均由事务终态控制。重启仅封存中断，不重放付费调用；澄清以 request/revision 防止旧响应恢复新状态。复盘发现的提前退出流资源释放问题已按先失败后修复验证。
+- 结论与限制：16–18 已达到本地单后端进程、Mock 模型及 ASGI 层验收条件，无未解决阻塞项。真实模型/系统凭据联调、前端浏览器、真实 R 的完整工作台验收留给后续计划；未将本地通过称为远端 CI 或产品全流程验收。按每三任务检查点规则暂停，不实施任务 19。
+
+## Task 19 动作到原分析服务与审批
+
+- TDD 红灯先确认动作模块缺失导致新集成测试收集失败；随后加入 `AssistantAction` 三分支联合类型（answer、clarify、plan_analysis），extra forbid，不接受 approve 或代码字段。动作预算限制为每轮最多 8 个结构化动作，普通文本片段不计为动作。
+- `AnalysisService` 成为旧 runs API 与工作台动作共用的服务入口，保留原有 per-run 锁、审批校验、LocalJobRunner、ExecutionController、QC 和报告路径。工作台 `plan_analysis` 只接受当前会话消息中明确选择的 dataset，生成 run 后 turn 进入 WAITING_USER，统计 attempt 在人工审批前保持为零。
+- 原审批端点仍是唯一启动统计执行的入口；审批完成、失败、拒绝或取消会通知关联 turn，旧 plan revision 不能批准新计划。模型输出中的“已批准”不会被解析为审批来源。
+- 新增可选、向后兼容的 `AgentContext`，只保存 conversation/turn、非密钥 model snapshot、skill 名称与 SHA-256 hash、source ID；初始 run 索引和 manifest 均在受控写入边界绑定，Controller 重验已有 context，旧 manifest 缺少该字段仍可读取。skill 名称/hash 数量必须相等，hash 必须为小写 64 位十六进制。
+- 任务 19 定向测试 `tests/integration/api/test_workbench_analysis.py`、工作台/turn 回归、旧 runs API、artifact/execution/workflow 回归合计 **193 passed**。覆盖模型不能批准、跨会话 dataset 拒绝、生成计划后零 attempt、原审批后 worker/QC 完成、context 快照和旧 manifest 兼容。
+- Ruff 与 mypy 已通过；广泛 Python 回归 **446 passed、1 skipped、1 deselected**（85.58 秒）。跳过项为原有 Windows symlink 权限，排除项为真实 R 集成。未读取真实 Key、调用真实模型或用户数据，未执行真实 R 用户数据分析；合成 R/旧工作流验收沿用既有测试。
+
+## 任务 16–19 整体复盘
+
+- 工作台存储、模型 profile、聊天 turn、LangGraph checkpoint 和科研 manifest/artifact 仍各自负责，新增 AgentContext 只做非密钥关联，不把对话文本或凭据写入科研证据。
+- 聊天队列与原统计 JobRunner 分离；动作只提交到旧 AnalysisService，真正的 R attempt 仍必须经过原审批和 ExecutionController。跨会话 dataset、伪造批准、旧 revision 和取消路径均由确定性校验阻断。
+- 运行恢复继续依赖旧 run/attempt/manifest 完整性校验；turn 只反映分析 run 结果，不把 turn COMPLETED 当成统计完成。旧 manifest 无 AgentContext 时保持兼容。
+- 本阶段完成本地单后端进程与 Mock 模型验收；真实 provider 联调、前端浏览器和完整用户数据 R 验收留给后续任务。任务 20 未开始，未 push、合并或修改 Draft PR。
+
+## Task 20 React 工作台与模型设置
+
+- Node 24.15.0 / npm 11.12.1 已确认满足 Node 22.12+ 要求。建立 Vite、React、TypeScript、Vitest、Testing Library 和 jsdom 项目，锁定 `package-lock.json`；`frontend/node_modules` 与 `frontend/dist` 已加入忽略规则。
+- 前端 API 客户端先获取 no-store CSRF bootstrap，再发送 JSON/模型 profile 请求；SSE 使用 `AbortController`、`after` 游标、按 seq 去重和最多 30 秒指数退避。浏览器不保存 API Key，设置表单提交后清空输入。
+- 客户端同时覆盖数据集上传、对话 turn/澄清响应、停止、原分析计划读取与 revision 审批，以及 profile 修改/删除、凭据清除和连接探针；204 响应不会被误解析为 JSON。
+- 实现三栏响应式工作台：项目/对话侧栏支持创建、重命名和归档；消息时间线与 Composer 支持数据集选择、counts/metadata 上传、每轮模型选择、澄清卡和重复发送禁用；资源面板读取 run/artifact 客户端数据展示状态、QC、图表、sandbox 报告和逐个下载；报告 iframe 使用空 sandbox，不执行原始 HTML。
+- 模型设置保留 provider/model/base URL/profile 保存与凭据写入边界，凭据只通过后端 API 发送；turn 进入等待用户状态后读取可信计划 revision，显示原分析审批卡，并提供停止入口和空状态。
+- TDD 红灯：补充缺口测试首次得到 **6 个失败套件、4 个失败断言**，准确捕获项目/对话操作、数据集/模型选择、澄清卡、资源结果、模型 profile 操作和安全 Markdown 缺失；实现后最终 `npm run test -- --run` 为 **10 files / 14 passed**，`npm run typecheck` 和 `npm run build` 均通过。测试覆盖 IME/Shift Enter、重复发送禁用、旧 revision 请求映射、模型切换提示、Key 不进 localStorage/DOM、raw HTML/危险链接过滤、iframe sandbox 和 900/1200 响应式断点常量。
+- 后端公共回归 `uv run --offline pytest tests/unit tests/integration tests/evals -k 'not test_real_deseq2_runner_preserves_ad_vs_control_direction' -q -p task17_isolation -p no:cacheprovider --basetemp=runs/task20-backend --tb=short`：**449 passed、1 skipped、1 deselected**（84.46 秒）。跳过项为原有 Windows symlink 权限，排除项为真实 R 集成。
+- 客户端新增 run/artifact/QC 只读方法和项目/对话/profile 全部工作台操作；任务 21 的启动脚本、静态资源挂载、Playwright 和 CI 前端 job 尚未实现。未调用真实模型、读取真实 Key、执行用户数据 R 或 push/合并。
+
+## 任务 16–20 整体复盘
+
+- 工作台后端、原分析审批、React 客户端和模型凭据边界保持分层；前端只通过 REST/SSE 访问后端，不导入 Python、R Runner 或模型客户端。
+- 事件 reducer 按 seq 去重，断线通过 after 游标恢复；Composer 的 IME/Shift 行为、数据集/模型选择、澄清 revision、模型凭据清空、安全 Markdown、报告 sandbox、结果下载和响应式断点均有自动测试证据。任务 21 又以 Playwright 验证了刷新、SSE 连接、模型切换、窄屏和键盘交互。
+- 当前完成本地单后端进程、Mock 模型、前端构建、真实 R 合成工作流和 Python 回归验收；GEO/MCP 未接入。
+
+## Task 21 启动、浏览器验收和门禁
+
+- 会话开始基线为任务 20 提交 `3f6a77f`，worktree 干净，分支为 `agent/bio-agent-mvp`。遵循 TDD：静态/API 与启动脚本定向测试先因缺少静态挂载、dist 检查和启动入口而 **3 failed**；真实 R 工作台验收先以占位失败 **2 failed**，再替换为实际流程。
+- FastAPI 先注册 API，再挂载 `frontend/dist`。SPA 前端路由回退到 `index.html`，未知 `/api/...` 保留结构化 JSON 404；HTML 与普通静态文件 `no-store`，带哈希的静态资源使用 immutable 缓存；缺少 dist 返回含 `npm run build` 的 503 提示。
+- `scripts/start-workbench.ps1` 检查 Node 22.12+、uv、Rscript、dist 和监听端口，支持可选构建，使用前台 uvicorn，不终止其他进程。`scripts/check.ps1` 增加 npm ci、Vitest、typecheck、build 和 Playwright，并为 Python/R pytest 使用独立 basetemp 防止 Windows 临时目录冲突。
+- Playwright 使用固定 API Mock 和独立 Vite global setup，不加载真实 provider；浏览器测试覆盖项目/对话入口、Composer Enter/Shift+Enter、模型切换、刷新、SSE 连接、窄屏。真实 Python e2e 使用合成 counts/metadata 和真实 DESeq2，验证批准前零 attempt、批准后完成、QC/报告及每个 artifact 的 SHA-256 下载，`lfc_shrink` 开/关均通过。
+- 文档补充首次安装、生产构建、单命令启动、开发双终端、模型/Key 边界、日志定位和 R 前置条件；CI 新增 Node 22 前端 job，原 Python/R job 保持。Playwright 生成目录已加入 `.gitignore` 并清理。
+- 定向验证：`npm ci` 完成；`npm run test -- --run` 为 **10 files / 14 passed**；typecheck、build 通过；`npm run e2e` 为 **1 passed**；静态/启动定向测试 **23 passed**；check 脚本单元测试 **20 passed**；真实工作台 e2e 参数化 shrink **2 passed**。完整真实 R 组合为 **7 passed**（含既有真实 runner、发布、bulk、recovery 与本工作台）。
+- 统一 `powershell -ExecutionPolicy Bypass -File scripts/check.ps1` 全部通过：前端安装/测试/类型检查/构建/浏览器、R testthat **37 passed**、Python 公共回归 **457 passed、1 skipped、1 deselected**、真实 R/e2e **7 passed**，仅保留 pytest 缓存目录的 Windows 权限 warning。未执行远端 CI、未调用真实模型或读取真实 Key。
+- 用户要求保留 `renv/activate.R` 的自动空白变更；该文件未暂存、未提交，其他任务 21 文件已明确暂存。任务 21 不接 GEO、Skills 或 MCP，不 push、不合并。
+
+## Task 19–21 整体复盘
+
+- A 工作台范围已闭环：任务 19 将结构化动作接入原分析服务和人工审批，任务 20 提供 React/模型配置界面，任务 21 提供同源静态托管、前台启动、浏览器验收和 CI/check 门禁。聊天仍通过 REST/SSE 访问后端，统计执行仍由原审批与 R worker 负责。
+- 科研证据边界保持不变：模型不能伪造批准，审批前 attempt 为零；真实合成 R 运行证明批准后 QC、报告和 artifact hash 可复核。凭据仍在系统存储/环境引用边界，测试没有真实模型或 Key。
+- 真实浏览器与真实 R 合成证据现已具备；远端 CI、provider 联调、GEO GSE、Skills/MCP 和多 Agent 编排仍属于后续阶段。
+
 ## 下一任务
 
-当前交付聚焦已搭建的 Mock 本地完整流程，真实模型 API 由用户后续接入；不再等待 Key。发布收尾仍属 Task 15：推送需前述明确授权，之后核验最新 CI；具体 UI 演示审批获准后补录结果/GIF及手工下载核验。保留 Draft PR，不直接合并。
+任务 22：GEO GSE 数据接入，依赖任务 21 已完成的 A 工作台检查点。按 [GEO 计划](../superpowers/plans/2026-09-08-geo.md) 领取单个编号任务；本次不提前实现 Skills/MCP。19–21 整体复盘已完成。
+
+真实模型 API 仍可由用户后续接入，不等待 Key。Task 15 发布收尾单独保留：推送需前述明确授权，之后核验最新 CI；具体 UI 演示审批获准后补录结果/GIF及手工下载核验。保持 Draft，不直接合并。
+
+## 下一阶段设计与计划
+
+2026-09-08 用户确认：先本地 Web 工作台与模型配置，再 GEO GSE counts/样本信息，最后 Skills/MCP；保留 bulk 双组 DESeq2、人工审批和单 Agent 架构。CLI 共用 API 的边界保留，首版不实现 TUI。
+
+| 子项目 | 规格 | 计划 | 状态 |
+| --- | --- | --- | --- |
+| A 工作台与模型 | [设计](../superpowers/specs/2026-09-08-workbench-design.md) | [16–21](../superpowers/plans/2026-09-08-workbench.md) | 16–21 已实现 |
+| B GEO 数据接入 | [设计](../superpowers/specs/2026-09-08-geo-design.md) | [22–27](../superpowers/plans/2026-09-08-geo.md) | 文档已编写，依赖 21 |
+| C Skills/MCP | [设计](../superpowers/specs/2026-09-08-extensions-design.md) | [28–33](../superpowers/plans/2026-09-08-extensions.md) | 文档已编写，依赖 27 |
+
+设计采用 React/TypeScript + FastAPI 同源工作台、REST/SSE 事件、独立对话存储和 turn 队列；API Key 使用系统凭据存储/环境引用，切换模型只影响新轮次。GEO 下载与样本确认保持科学校验及来源 hash；Skill/MCP 不具有替代分析审批的权限。
+
+规格准备会话仅新增规格/计划并更新进度；基线统计修复为 `0b14036`，其 Python 359 passed/1 skipped、R 37 passed 是此前实际验证结果，不是新功能验收。该会话的文档检查结果在本节记录；任务 16 的实现与测试结果见上文独立记录。
+
+文档验收：六份文档的 15 个相对链接全部存在，编号任务恰为 16–33；24 段 Python 示例通过 AST 语法解析，24 段 PowerShell 示例通过原生 Parser 检查，无占位符扫描命中。规格覆盖与字段自检修正了 ArtifactRecord.relative_path、Skill 引用组合 hash 和 GEO 下载/映射顺序。八项 pre-commit hooks 通过，暂存 diff 检查通过。仅做文档语法/一致性检查，未执行计划中的未来代码示例，也未重跑未改动的统计实现。
 
 ## 新会话启动提示词
 
 ```text
-继续 Bio-Agent 的任务 15 收尾。进入既有 .worktrees/bio-agent-mvp，确认
+继续 Bio-Agent 的任务 22。进入既有 .worktrees/bio-agent-mvp，确认
 agent/bio-agent-mvp 分支，按 AGENTS.md 读取设计/计划/进度及 Git 状态。
-用户已决定跳过真实模型 API 实验，后续自行接入；不要再要求配置 Key。
-检查 Mock 本地完整流程；按已有授权边界收尾 UI 演示、下载 SHA-256、GIF、远端 CI，
-更新进度与任务 13–15 复盘并提交。保持 Draft，不合并、不新建 worktree。
+随后读取 2026-09-08-geo-design.md 和 2026-09-08-geo.md。
+任务 21 已完成本地 Web、模型配置、启动、浏览器和 A 模块门禁；
+本次只实现任务 22 的 GEO 前置任务，先失败测试，再实现和验收。
+自动模型测试用 Mock，不读取真实 Key；暂不实现 Skills 或 MCP。
+19–21 整体复盘已完成；保持明确人工审批和原统计执行边界。
+完成后更新计划/进度并提交，保留旧 PR Draft，不推送、不合并、不新建 worktree。
 ```

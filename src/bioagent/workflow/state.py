@@ -35,6 +35,7 @@ class WorkflowState(TypedDict, total=False):
     qc: dict[str, JsonValue]
     error: dict[str, JsonValue]
     report: dict[str, JsonValue]
+    agent_context: dict[str, JsonValue]
 
 
 class WorkflowInput(BaseModel):
@@ -46,6 +47,7 @@ class WorkflowInput(BaseModel):
     dataset_id: str = Field(min_length=36, max_length=36)
     user_goal: str = Field(min_length=1)
     summary: dict[str, JsonValue]
+    agent_context: dict[str, JsonValue] | None = None
 
     @field_validator("run_id")
     @classmethod

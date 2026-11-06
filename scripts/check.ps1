@@ -21,11 +21,17 @@ try {
     Invoke-Check uv @("sync", "--frozen", "--dev")
 
     if ($Suite -in @("All", "Python")) {
+        Invoke-Check npm @("--prefix", "frontend", "ci")
+        Invoke-Check npm @("--prefix", "frontend", "run", "test", "--", "--run")
+        Invoke-Check npm @("--prefix", "frontend", "run", "typecheck")
+        Invoke-Check npm @("--prefix", "frontend", "run", "build")
+        Invoke-Check npm @("--prefix", "frontend", "run", "e2e")
         Invoke-Check uv @("run", "--no-sync", "ruff", "check", ".")
         Invoke-Check uv @("run", "--no-sync", "mypy", "src")
         Invoke-Check uv @(
             "run", "--no-sync", "pytest", "tests/unit", "tests/integration", "tests/evals",
-            "-k", "not test_real_deseq2_runner_preserves_ad_vs_control_direction", "-q"
+            "-k", "not test_real_deseq2_runner_preserves_ad_vs_control_direction", "-q",
+            "--basetemp=runs/check-python"
         )
     }
 
@@ -36,7 +42,7 @@ try {
         Invoke-Check uv @(
             "run", "--no-sync", "pytest",
             "tests/integration/test_deseq2_runner.py::test_real_deseq2_runner_preserves_ad_vs_control_direction",
-            "tests/e2e", "-v"
+            "tests/e2e", "-v", "--basetemp=runs/check-r-e2e"
         )
     }
 }

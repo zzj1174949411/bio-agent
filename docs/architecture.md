@@ -6,8 +6,9 @@ Bio-Agent 是本地单用户、单 LangGraph 编排器的 bulk RNA-seq 双组分
 
 | 组件 | 责任与边界 |
 | --- | --- |
-| `ui/streamlit_app.py` | 通过 HTTP 上传、审批、轮询、查看结果与项目历史；不直接调用 graph 或 RRunner |
-| `api/` | FastAPI 应用工厂、依赖装配、上传限制、run 索引、审批与不透明 artifact ID 下载 |
+| `frontend/` | React/TypeScript 同源工作台；只通过 REST/SSE 访问 API，负责项目/对话、模型设置、审批卡、QC/报告和 artifact 下载 |
+| `ui/streamlit_app.py` | 保留的旧 HTTP 客户端，通过 API 上传、审批、轮询、查看结果与项目历史；不直接调用 graph 或 RRunner |
+| `api/` | FastAPI 应用工厂、依赖装配、上传限制、run 索引、审批、不透明 artifact ID 下载，以及生产静态资源和前端路由回退 |
 | `datasets/` | CSV/TSV 解析、ID/数值/样本/分组校验；每次读取重新核对输入 SHA-256 |
 | `llm/` | DeepSeek/Ollama 模型工厂与结构化 Planner；只接收目标和最小数据摘要 |
 | `workflow/` | 规划、人工审批 interrupt、执行和 QC 路由；科学参数修订后重新审批 |

@@ -25,10 +25,16 @@ from bioagent.execution.job_runner import JobStatus, LocalJobRunner
 from bioagent.execution.r_runner import RRunner
 from bioagent.llm.factory import create_chat_model
 from bioagent.llm.planner import AnalysisPlanner
+from bioagent.models.adapters import ModelAdapter
+from bioagent.models.secrets import SecretStore, SystemSecretStore
+from bioagent.models.store import ModelProfileStore
 from bioagent.reporting.workflow import ArtifactReporter
+from bioagent.services.analysis import AnalysisService
 from bioagent.storage.checkpoint import sqlite_checkpoint
 from bioagent.storage.runs import RunRepository
 from bioagent.tools.registry import ToolRegistry
+from bioagent.workbench.store import WorkbenchStore
+from bioagent.workbench.turns import ChatFactory, ConfiguredChatFactory, TurnService
 from bioagent.workflow.graph import build_graph
 
 ReadinessCheck = Callable[[], bool]
@@ -88,6 +94,11 @@ class DependencyContainer:
     max_rows: int
     max_columns: int
     parse_timeout_seconds: float
+    model_profiles: ModelProfileStore
+    model_adapter: ModelAdapter
+    workbench: WorkbenchStore
+    turn_service: TurnService
+    analysis_service: AnalysisService = field(init=False)
     jobs_by_run: dict[str, str] = field(default_factory=dict)
     jobs_lock: RLock = field(default_factory=RLock)
     run_locks: dict[str, RLock] = field(default_factory=dict)
@@ -129,6 +140,16 @@ def build_dependencies(
     stack: ExitStack,
 ) -> DependencyContainer:
     supplied = dict(overrides or {})
+    secrets = cast(SecretStore, supplied.get("secret_store") or SystemSecretStore())
+    model_profiles = stack.enter_context(
+        ModelProfileStore(settings.workbench_db, settings, secrets)
+    )
+    model_adapter = ModelAdapter(model_profiles)
+    workbench = stack.enter_context(WorkbenchStore(settings.workbench_db))
+    factory = cast(
+        ChatFactory, supplied.get("chat_model_factory") or ConfiguredChatFactory(model_profiles)
+    )
+    turn_service = TurnService(workbench, factory)
     project_root = Path(__file__).resolve().parents[3]
     errors: list[str] = []
 
@@ -235,7 +256,14 @@ def build_dependencies(
         max_rows=max_rows,
         max_columns=max_columns,
         parse_timeout_seconds=float(timeout_value),
+        model_profiles=model_profiles,
+        model_adapter=model_adapter,
+        workbench=workbench,
+        turn_service=turn_service,
     )
+    analysis_service = AnalysisService(container)
+    container.analysis_service = analysis_service
+    turn_service.bind_analysis(analysis_service)
     stack.callback(container.shutdown)
     return container
 

@@ -19,6 +19,7 @@ from bioagent.artifacts.paths import validate_artifact_relative_path
 from bioagent.domain.plans import Comparison
 from bioagent.domain.qc import QCReport
 from bioagent.domain.runs import RunStatus
+from bioagent.workbench.models import TurnModelSnapshot
 
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
@@ -57,8 +58,7 @@ class _FrozenValidatedModel(BaseModel):
     ) -> Self:
         copied = super().model_copy(update=update, deep=deep)
         payload = {
-            field_name: getattr(copied, field_name)
-            for field_name in type(self).model_fields
+            field_name: getattr(copied, field_name) for field_name in type(self).model_fields
         }
         return type(self).model_validate(payload)
 
@@ -108,6 +108,33 @@ class AttemptRecord(_FrozenValidatedModel):
         return self
 
 
+class AgentContext(_FrozenValidatedModel):
+    """Optional non-secret link from a workbench turn to its analysis run."""
+
+    conversation_id: UUID
+    turn_id: UUID
+    model_snapshot: TurnModelSnapshot | None = None
+    skill_hashes: tuple[str, ...] = ()
+    skill_names: tuple[str, ...] = ()
+    source_id: UUID | None = None
+
+    @field_validator("skill_hashes")
+    @classmethod
+    def hashes_are_sha256(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(
+            len(item) != 64 or any(char not in "0123456789abcdef" for char in item)
+            for item in value
+        ):
+            raise ValueError("skill hashes must be lowercase SHA-256 values")
+        return value
+
+    @model_validator(mode="after")
+    def skill_names_match_hashes(self) -> Self:
+        if len(self.skill_names) != len(self.skill_hashes):
+            raise ValueError("skill names and hashes must have equal lengths")
+        return self
+
+
 class RunManifest(_FrozenValidatedModel):
     schema_version: Literal["1.0"] = "1.0"
     run_id: UUID
@@ -130,6 +157,7 @@ class RunManifest(_FrozenValidatedModel):
     approvals: tuple[ApprovalRecord, ...] = Field(min_length=1)
     attempts: tuple[AttemptRecord, ...] = Field(min_length=1)
     artifacts: tuple[ArtifactRecord, ...] = Field(default_factory=tuple)
+    agent_context: AgentContext | None = None
 
     @field_validator("input_hashes")
     @classmethod
@@ -140,8 +168,7 @@ class RunManifest(_FrozenValidatedModel):
         if not {"counts", "metadata"}.issubset(value):
             raise ValueError("input_hashes must include counts and metadata")
         if any(
-            len(digest) != 64
-            or any(character not in "0123456789abcdef" for character in digest)
+            len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest)
             for digest in value.values()
         ):
             raise ValueError("input_hashes must contain SHA-256 digests")
@@ -201,10 +228,7 @@ class RunManifest(_FrozenValidatedModel):
 
 
 def write_manifest_atomic(path: Path, manifest: RunManifest) -> str:
-    payload = {
-        field_name: getattr(manifest, field_name)
-        for field_name in RunManifest.model_fields
-    }
+    payload = {field_name: getattr(manifest, field_name) for field_name in RunManifest.model_fields}
     validated_manifest = RunManifest.model_validate(payload)
     content = (
         json.dumps(

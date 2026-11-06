@@ -1,0 +1,9 @@
+export type Project = { id: string; title: string; archived: boolean };
+export type Conversation = Project & { project_id: string; selected_profile_id: string | null };
+export type Message = { id: string; role: "user" | "assistant"; content: string; partial: boolean; dataset_ids: string[] };
+export type Turn = { id: string; status: string; run_id: string | null; input_revision: number; pending_input: { request_id: string; revision: number; question: string } | null };
+export type ModelProfile = { id: string; label: string; provider: string; model: string; base_url: string; credential_configured: boolean; revision?: number; structured_method?: string; thinking?: string };
+export type DatasetOption = { id: string; label: string };
+export type ProfileOption = { id: string; label: string };
+export type RunSummary = { status: string; qc_status?: string | null; qcStatus?: string | null; report_url?: string | null; reportUrl?: string | null; plots?: Array<{ name: string; url: string }>; artifacts?: Artifact[] };
+export type Artifact = { artifact_id?: string; name: string; url: string; sha256?: string };

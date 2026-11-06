@@ -324,21 +324,11 @@ def _workflow_state(value: object) -> dict[str, JsonValue]:
 
 @router.post("/api/v1/runs", status_code=status.HTTP_201_CREATED)
 def create_run(request: RunCreate, dependencies: Dependencies) -> dict[str, JsonValue]:
-    _, summary = _stored_validation(request.dataset_id, dependencies)
-    run_id = dependencies.artifact_manager.create_run()
-    config = {"configurable": {"thread_id": run_id}}
-    result = dependencies.graph.invoke(
-        {
-            "run_id": run_id,
-            "dataset_id": request.dataset_id,
-            "user_goal": request.goal,
-            "summary": summary.model_dump(mode="json"),
-        },
-        config,
+    run_id = dependencies.analysis_service.create_run(
+        dataset_id=request.dataset_id,
+        goal=request.goal,
     )
-    state = _workflow_state(result)
-    dependencies.run_repository.write(run_id, state)
-    return state
+    return _read_run(run_id, dependencies)
 
 
 def _optional_positive_int(state: Mapping[str, object], key: str) -> int | None:
@@ -466,8 +456,7 @@ def _resume(
     return state
 
 
-@router.post("/api/v1/runs/{run_id}/approval")
-def approve_run(
+def _approve_run(
     run_id: str,
     request: ApprovalRequest,
     response: Response,
@@ -510,6 +499,16 @@ def approve_run(
                     dependencies.run_repository.write(run_id, running)
                 with dependencies.execution_adapter.cancellation_scope(cancelled):
                     state = _resume(run_id, decision, dependencies)
+                if state.get("status") == RunStatus.COMPLETED.value:
+                    dependencies.workbench.finish_run_turn(run_id, success=True)
+                elif state.get("status") in {RunStatus.FAILED.value, RunStatus.CANCELLED.value}:
+                    error_value = state.get("error")
+                    error_code = "ANALYSIS_FAILED"
+                    if isinstance(error_value, dict) and isinstance(error_value.get("code"), str):
+                        error_code = cast(str, error_value["code"])
+                    dependencies.workbench.finish_run_turn(
+                        run_id, success=False, error_code=error_code
+                    )
             except Exception:
                 with run_lock:
                     latest = _read_run(run_id, dependencies)
@@ -539,8 +538,7 @@ def approve_run(
     return {"run_id": run_id, "job_id": job_id, "status": RunStatus.QUEUED.value}
 
 
-@router.post("/api/v1/runs/{run_id}/cancel")
-def cancel_run(
+def _cancel_run(
     run_id: str,
     response: Response,
     dependencies: Dependencies,
@@ -569,6 +567,25 @@ def cancel_run(
             )
     response.status_code = status.HTTP_202_ACCEPTED
     return {"run_id": run_id, "job_id": job_id, "status": "CANCELLATION_REQUESTED"}
+
+
+@router.post("/api/v1/runs/{run_id}/approval")
+def approve_run(
+    run_id: str,
+    request: ApprovalRequest,
+    response: Response,
+    dependencies: Dependencies,
+) -> Mapping[str, object]:
+    return dependencies.analysis_service.approve_run(run_id, request, response)
+
+
+@router.post("/api/v1/runs/{run_id}/cancel")
+def cancel_run(
+    run_id: str,
+    response: Response,
+    dependencies: Dependencies,
+) -> Mapping[str, object]:
+    return dependencies.analysis_service.cancel_run(run_id, response)
 
 
 def _manifest(run_id: str, dependencies: DependencyContainer) -> RunManifest:

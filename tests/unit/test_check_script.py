@@ -35,6 +35,7 @@ function Record-Command($tool, $arguments) {
 }
 function uv { Record-Command 'uv' $args }
 function Rscript { Record-Command 'Rscript' $args }
+function npm { Record-Command 'npm' $args }
 & $env:BIO_CHECK_SCRIPT -Suite $env:BIO_CHECK_SUITE
 exit $LASTEXITCODE
 """,
@@ -62,24 +63,31 @@ exit $LASTEXITCODE
 def test_all_checks_run_from_project_root_in_dependency_order(tmp_path: Path) -> None:
     result, commands = run_checks(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert len(commands) == 8
+    assert len(commands) == 13
     assert all(Path(command["cwd"]) == ROOT for command in commands)
     arguments = [command["arguments"] for command in commands]
     assert arguments[0] == ["sync", "--frozen", "--dev"]
-    assert arguments[1] == ["run", "--no-sync", "ruff", "check", "."]
-    assert arguments[2] == ["run", "--no-sync", "mypy", "src"]
-    assert {"tests/unit", "tests/integration", "tests/evals"} <= set(arguments[3])
-    assert "not test_real_deseq2_runner_preserves_ad_vs_control_direction" in arguments[3]
-    assert commands[4]["tool"] == "Rscript"
-    assert "renv::restore(prompt = FALSE)" in arguments[4][-1]
-    assert commands[5]["tool"] == "Rscript"
-    assert "stopifnot" in arguments[5][-1] and "renv::status" in arguments[5][-1]
-    assert arguments[6] == ["r/tests/testthat.R"]
-    assert "tests/e2e" in arguments[7]
-    assert any("::test_real_deseq2_runner" in argument for argument in arguments[7])
+    assert arguments[1:6] == [
+        ["--prefix", "frontend", "ci"],
+        ["--prefix", "frontend", "run", "test", "--", "--run"],
+        ["--prefix", "frontend", "run", "typecheck"],
+        ["--prefix", "frontend", "run", "build"],
+        ["--prefix", "frontend", "run", "e2e"],
+    ]
+    assert arguments[6] == ["run", "--no-sync", "ruff", "check", "."]
+    assert arguments[7] == ["run", "--no-sync", "mypy", "src"]
+    assert {"tests/unit", "tests/integration", "tests/evals"} <= set(arguments[8])
+    assert "not test_real_deseq2_runner_preserves_ad_vs_control_direction" in arguments[8]
+    assert commands[9]["tool"] == "Rscript"
+    assert "renv::restore(prompt = FALSE)" in arguments[9][-1]
+    assert commands[10]["tool"] == "Rscript"
+    assert "stopifnot" in arguments[10][-1] and "renv::status" in arguments[10][-1]
+    assert arguments[11] == ["r/tests/testthat.R"]
+    assert "tests/e2e" in arguments[12]
+    assert any("::test_real_deseq2_runner" in argument for argument in arguments[12])
 
 
-@pytest.mark.parametrize("fail_at", range(1, 9))
+@pytest.mark.parametrize("fail_at", range(1, 14))
 def test_native_failure_stops_all_subsequent_checks(tmp_path: Path, fail_at: int) -> None:
     result, commands = run_checks(tmp_path, fail_at=fail_at)
     assert result.returncode != 0
@@ -87,17 +95,23 @@ def test_native_failure_stops_all_subsequent_checks(tmp_path: Path, fail_at: int
     assert "23" in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize(("suite", "count"), [("Python", 4), ("R", 5)])
+@pytest.mark.parametrize(("suite", "count"), [("Python", 9), ("R", 5)])
 def test_ci_suites_select_only_their_checks(tmp_path: Path, suite: str, count: int) -> None:
     result, commands = run_checks(tmp_path, suite=suite)
     assert result.returncode == 0, result.stderr
     assert len(commands) == count
     if suite == "Python":
-        assert all(command["tool"] == "uv" for command in commands)
-        assert all("tests/e2e" not in command["arguments"] for command in commands)
+        assert commands[0]["tool"] == "uv"
+        assert [command["tool"] for command in commands[1:6]] == ["npm"] * 5
+        assert all(command["tool"] == "uv" for command in commands[6:])
+        assert all("tests/e2e" not in command["arguments"] for command in commands[8:])
     else:
         assert [command["tool"] for command in commands] == [
-            "uv", "Rscript", "Rscript", "Rscript", "uv",
+            "uv",
+            "Rscript",
+            "Rscript",
+            "Rscript",
+            "uv",
         ]
 
 
@@ -110,8 +124,17 @@ def test_ci_uses_both_platforms_locked_caches_and_no_secrets() -> None:
     assert "pull_request_target" not in text
     assert workflow["permissions"] == {"contents": "read"}
     jobs = workflow["jobs"]
+    frontend = jobs["frontend"]
+    assert frontend["runs-on"] == "ubuntu-24.04"
+    setup_node = next(
+        step for step in frontend["steps"] if "actions/setup-node@" in step.get("uses", "")
+    )
+    assert setup_node["with"]["node-version"] == "22.12.0"
+    assert any("npm run e2e" in step.get("run", "") for step in frontend["steps"])
+    assert any("playwright install" in step.get("run", "") for step in frontend["steps"])
     assert set(jobs["python"]["strategy"]["matrix"]["os"]) == {
-        "windows-latest", "ubuntu-24.04",
+        "windows-latest",
+        "ubuntu-24.04",
     }
     assert jobs["r-e2e"]["runs-on"] == "ubuntu-24.04"
     for name, suite in [("python", "Python"), ("r-e2e", "R")]:
@@ -150,8 +173,7 @@ def test_precommit_pins_checks_without_automatic_lint_fixes() -> None:
 def test_bioconductor_lock_records_use_the_canonical_repository() -> None:
     lock = json.loads((ROOT / "renv.lock").read_text(encoding="utf-8"))
     records = [
-        record for record in lock["Packages"].values()
-        if record.get("Source") == "Bioconductor"
+        record for record in lock["Packages"].values() if record.get("Source") == "Bioconductor"
     ]
     assert records
     for record in records:

@@ -3,6 +3,7 @@ from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
 from bioagent.config import Settings
+from bioagent.models.adapters import deepseek_body
 
 
 def create_chat_model(settings: Settings) -> BaseChatModel:
@@ -21,7 +22,7 @@ def create_chat_model(settings: Settings) -> BaseChatModel:
             max_retries=2,
             # The planner forces one schema tool; DeepSeek thinking mode does
             # not support forced tool_choice. Keep schema validation local.
-            extra_body={"thinking": {"type": "disabled"}},
+            extra_body=deepseek_body(),
         )
 
     return ChatOllama(

@@ -13,6 +13,7 @@
 - 单个 LangGraph 编排器配合本地单 worker，调用固定 R 入口完成 DESeq2。
 - 生成结果表、PCA、样本相关性热图、MA plot、火山图、QC 与 HTML 报告。
 - 分离 SQLite 工作流 checkpoint、API 运行索引与科研 manifest；下载时复核产物 SHA-256。
+- 提供本地 React 工作台：项目/对话、SSE 消息、人工审批、模型 profile、QC/报告和逐个 artifact 下载。
 - Streamlit 经 HTTP API 展示五个页面，运行历史来自项目存储。
 
 ## 架构
@@ -52,10 +53,12 @@ MVP 只接受已计数的 bulk RNA-seq 数据，选定分组列必须恰好有�
 
 ## 快速开始
 
-先按 [Windows / Linux 安装指南](docs/getting-started.md) 安装 uv、Python 3.12、R 4.5.2 并恢复 renv。以下命令在仓库根目录的 PowerShell 中执行：
+先按 [Windows / Linux 安装指南](docs/getting-started.md) 安装 uv、Node 22.12+、Python 3.12、R 4.5.2 并恢复 renv。构建并启动本地 Web 工作台的完整说明见 [工作台指南](docs/workbench.md)。以下命令在仓库根目录的 PowerShell 中执行：
 
 ```powershell
 uv sync --frozen --dev
+npm --prefix frontend ci
+npm --prefix frontend run build
 Rscript -e "renv::restore(prompt = FALSE)"
 Copy-Item .env.example .env
 $env:R_LIBS = (Rscript -e 'cat(renv::paths$library())' | Select-Object -Last 1).Trim()
@@ -68,7 +71,7 @@ uv run uvicorn bioagent.api.app:create_app --factory --reload --host 127.0.0.1
 uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1
 ```
 
-打开 [界面](http://localhost:8501) 或 [OpenAPI 文档](http://localhost:8000/docs)。`/health` 表示进程在线；`/ready` 检查依赖初始化，不等于真实模型请求或完整 DESeq2 分析已通过。
+打开 [React 工作台](http://localhost:8000/)、[旧 Streamlit 界面](http://localhost:8501) 或 [OpenAPI 文档](http://localhost:8000/docs)。`/health` 表示进程在线；`/ready` 检查依赖初始化，不等于真实模型请求或完整 DESeq2 分析已通过。
 
 ## DeepSeek / Ollama 配置
 
