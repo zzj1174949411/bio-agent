@@ -96,17 +96,15 @@ def test_native_failure_stops_all_subsequent_checks(tmp_path: Path, fail_at: int
     assert "23" in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize(("suite", "count"), [("Python", 10), ("R", 5)])
+@pytest.mark.parametrize(("suite", "count"), [("Python", 5), ("R", 5)])
 def test_ci_suites_select_only_their_checks(tmp_path: Path, suite: str, count: int) -> None:
     result, commands = run_checks(tmp_path, suite=suite)
     assert result.returncode == 0, result.stderr
     assert len(commands) == count
     if suite == "Python":
-        assert commands[0]["tool"] == "uv"
-        assert [command["tool"] for command in commands[1:6]] == ["npm"] * 5
-        assert all(command["tool"] == "uv" for command in commands[6:])
-        assert "tests/e2e/test_extensions_workflow.py" in commands[8]["arguments"]
-        assert "tests/e2e" not in commands[9]["arguments"]
+        assert all(command["tool"] == "uv" for command in commands)
+        assert "tests/e2e/test_extensions_workflow.py" in commands[3]["arguments"]
+        assert "tests/e2e" not in commands[4]["arguments"]
     else:
         assert [command["tool"] for command in commands] == [
             "uv",

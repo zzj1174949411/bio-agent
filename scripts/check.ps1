@@ -20,12 +20,15 @@ Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
     Invoke-Check uv @("sync", "--frozen", "--dev")
 
-    if ($Suite -in @("All", "Python")) {
+    if ($Suite -eq "All") {
         Invoke-Check npm @("--prefix", "frontend", "ci")
         Invoke-Check npm @("--prefix", "frontend", "run", "test", "--", "--run")
         Invoke-Check npm @("--prefix", "frontend", "run", "typecheck")
         Invoke-Check npm @("--prefix", "frontend", "run", "build")
         Invoke-Check npm @("--prefix", "frontend", "run", "e2e")
+    }
+
+    if ($Suite -in @("All", "Python")) {
         Invoke-Check uv @("run", "--no-sync", "ruff", "check", ".")
         Invoke-Check uv @("run", "--no-sync", "mypy", "src")
         Invoke-Check uv @(

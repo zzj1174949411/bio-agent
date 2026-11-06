@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from importlib import import_module
 from pathlib import Path
 from threading import Lock
 
@@ -83,7 +84,7 @@ def _main() -> None:
     socket.socket.connect = blocked  # type: ignore[method-assign]
     socket.socket.connect_ex = blocked  # type: ignore[method-assign, assignment]
     socket.create_connection = blocked  # type: ignore[assignment]
-    import pypdfium2 as pdfium  # type: ignore[import-untyped]
+    pdfium = import_module("pypdfium2")
 
     page_number = int(sys.argv[2])
     if not 1 <= page_number <= 200:
