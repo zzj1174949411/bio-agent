@@ -49,7 +49,7 @@ async function mockGeoBackend(page: Page) {
     if (path.endsWith("/messages")) return route.fulfill({ json: { items: [] } });
     if (path.endsWith("/events")) {
       eventPoll += 1;
-      const events = eventPoll === 1
+      const events = !approved
         ? `id: 1\nevent: geo.source\ndata: ${JSON.stringify({ source_id: "source-1" })}\n\n`
         : approved
           ? `id: ${eventPoll}\nevent: turn.completed\ndata: {}\n\n`
@@ -84,6 +84,7 @@ test("GEO source selection, mapping, approval, and results use local fixtures", 
   await expect(page.getByRole("heading", { name: "样本映射" })).toBeVisible();
   await page.getByRole("button", { name: "确认样本映射" }).click();
   await expect(page.getByText("状态：READY")).toBeVisible();
+  await page.getByLabel("我已核对本次方案").check();
   await page.getByRole("button", { name: "批准分析" }).click();
   await expect(page.getByText("运行状态：COMPLETED")).toBeVisible();
   await expect(page.getByRole("link", { name: "下载 artifact-report" })).toBeVisible();

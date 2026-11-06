@@ -1,3 +1,4 @@
+import type { MatrixDraft } from "../features/chat/MatrixImport";
 import type { Conversation, GeoImportState, GeoSearchRequest, GeoSearchState, GeoSelection, GeoSourceState, McpServer, Message, ModelProfile, Project, SkillDetail, SkillRecord, ToolDescriptor, ToolPolicy, Turn } from "./types";
 import { parseEventBlock, type WorkbenchEvent } from "./events";
 import { wikiPath, type WikiRequest, type WikiPreflight, type WikiList, type WikiPage, type WikiJob } from "./wiki";
@@ -27,6 +28,11 @@ export class ApiClient {
   }
 
   async bootstrap(): Promise<void> { this.csrf = (await this.request<{ csrf_token: string }>("/workbench/bootstrap")).csrf_token; }
+  matrixResults(chat: string, id: string): Promise<Record<string, unknown>> { return this.request(`/workbench/conversations/${chat}/matrices/${id}/results`); }
+  matrixLatest(chat: string): Promise<MatrixDraft | null> { return this.request(`/workbench/conversations/${chat}/matrices`); }
+  matrixPreview(chat: string, id: string, direction: string): Promise<MatrixDraft> { return this.request(`/workbench/conversations/${chat}/matrices/${id}?direction=${direction}`); }
+  matrixConfirm(chat: string, id: string, payload: Record<string, unknown>): Promise<MatrixDraft> { return this.request(`/workbench/conversations/${chat}/matrices/${id}/confirm`, { method: "POST", body: JSON.stringify(payload) }); }
+  async matrixUpload(chat: string, file: File): Promise<MatrixDraft> { const form = new FormData(); form.append("file", file); const response = await fetch(`${this.base}/workbench/conversations/${chat}/matrices`, { method: "POST", body: form, headers: this.csrf ? { "X-CSRF-Token": this.csrf } : {} }); if (!response.ok) { const body = await response.json(); throw new Error(body.detail?.code ?? "MATRIX_UPLOAD_FAILED"); } return response.json(); }
   projects(): Promise<{ items: Project[] }> { return this.request("/workbench/projects"); }
   createProject(title: string): Promise<Project> { return this.request("/workbench/projects", { method: "POST", body: JSON.stringify({ title }) }); }
   updateProject(id: string, payload: { title?: string; archived?: boolean }): Promise<Project> { return this.request(`/workbench/projects/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
@@ -52,7 +58,21 @@ export class ApiClient {
     return this.request(`/runs/${runId}/plan`);
   }
   run(runId: string): Promise<Record<string, unknown>> { return this.request(`/runs/${runId}`); }
-  artifacts(runId: string): Promise<{ run_id: string; artifacts: Array<{ artifact_id: string; sha256: string }> }> { return this.request(`/runs/${runId}/artifacts`); }
+  artifacts(runId: string): Promise<{ run_id: string; artifacts: Array<{ artifact_id: string; sha256: string; name?: string; media_type?: string }> }> { return this.request(`/runs/${runId}/artifacts`); }
+  async readArtifact(url: string, signal: AbortSignal): Promise<{ blob: Blob; type: string }> {
+    if (!/^\/api\/v1\/runs\/[\w-]+\/artifacts\/[^/?#]+$/.test(url)) throw new Error("非受控文件地址");
+    const response = await fetch(url, { signal });
+    if (!response.ok || !response.body) throw new Error("文件不可用或完整性核验失败");
+    const limit = 8 * 1024 * 1024;
+    if (Number(response.headers.get("content-length")) > limit) { await response.body.cancel(); throw new Error("文件超过 8 MiB 预览上限，请下载核查"); }
+    const reader = response.body.getReader(); const parts: Uint8Array<ArrayBuffer>[] = []; let size = 0;
+    try { while (true) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength;
+      if (size > limit) throw new Error("文件超过 8 MiB 预览上限，请下载核查");
+      parts.push(new Uint8Array(part.value));
+    } } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+    const type = response.headers.get("content-type")?.split(";")[0] ?? "application/octet-stream";
+    return { blob: new Blob(parts, { type }), type };
+  }
   artifactUrl(runId: string, artifactId: string): string { return `${this.base}/runs/${runId}/artifacts/${encodeURIComponent(artifactId)}`; }
   datasetValidation(datasetId: string): Promise<Record<string, unknown>> { return this.request(`/datasets/${encodeURIComponent(datasetId)}/validation`); }
   async uploadDataset(counts: File, metadata: File): Promise<{ dataset_id: string }> {

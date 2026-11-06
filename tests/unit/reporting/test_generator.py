@@ -54,9 +54,7 @@ def _all_results_bytes() -> bytes:
     ]
     for index in range(2, 201):
         padj = "0.01" if index <= 7 else "0.5"
-        rows.append(
-            f"GENE_{index:03d},{100 + index}.0,1.0,0.2,5.0,0.001,{padj}"
-        )
+        rows.append(f"GENE_{index:03d},{100 + index}.0,1.0,0.2,5.0,0.001,{padj}")
     return ("\n".join(rows) + "\n").encode()
 
 
@@ -87,9 +85,7 @@ def _manifest(
     dataset_id = uuid4()
     attempt_id = uuid4()
     ended_at = _STARTED_AT + timedelta(minutes=5)
-    execution_summary_sha256 = sha256(
-        _execution_summary_bytes(numerator)
-    ).hexdigest()
+    execution_summary_sha256 = sha256(_execution_summary_bytes(numerator)).hexdigest()
     return RunManifest(
         run_id=run_id,
         dataset_id=dataset_id,
@@ -140,9 +136,7 @@ def _manifest(
                 sha256=sha256(all_results_bytes).hexdigest(),
             ),
             ArtifactRecord(
-                relative_path=(
-                    f"attempts/{attempt_id}/results/execution_summary.json"
-                ),
+                relative_path=(f"attempts/{attempt_id}/results/execution_summary.json"),
                 sha256=execution_summary_sha256,
             ),
             ArtifactRecord(
@@ -160,9 +154,7 @@ def _summary(
 ) -> ReportSummary:
     return ReportSummary.from_artifacts(
         manifest=manifest,
-        execution_summary_bytes=_execution_summary_bytes(
-            manifest.comparison.numerator
-        ),
+        execution_summary_bytes=_execution_summary_bytes(manifest.comparison.numerator),
         all_results_bytes=all_results_bytes,
     )
 
@@ -182,6 +174,27 @@ def test_report_builds_without_llm() -> None:
     assert "QC: WARN" in html
     assert "DESeq2" in html
     assert "LLM narrative unavailable" in html
+
+
+def test_report_displays_qc_evidence_counts_and_escapes_untrusted_values():
+    qc = QCReport(
+        status=QCStatus.WARN,
+        issues=(
+            QCIssue(
+                code="ZERO_FEATURE_REMOVED",
+                status=QCStatus.WARN,
+                message="all-zero features were removed",
+                evidence={"feature_count": 7132, "source_label": "<script>untrusted</script>"},
+            ),
+        ),
+    )
+    manifest = _manifest(qc)
+    html = ReportGenerator().render(
+        manifest=manifest, qc=qc, summary=_summary(manifest), narrative=None
+    )
+    assert "7132" in html
+    assert "feature_count" in html
+    assert "<script>untrusted</script>" not in html
 
 
 def test_report_uses_only_structured_numbers_and_relative_artifact_links() -> None:
@@ -238,9 +251,7 @@ def test_report_does_not_link_artifacts_from_a_failed_prior_attempt() -> None:
             ),
             "artifacts": (
                 ArtifactRecord(
-                    relative_path=(
-                        f"attempts/{prior_attempt_id}/figures/pca.png"
-                    ),
+                    relative_path=(f"attempts/{prior_attempt_id}/figures/pca.png"),
                     sha256="e" * 64,
                 ),
                 *manifest.artifacts,
@@ -311,9 +322,7 @@ def test_narrative_receives_only_whitelisted_structured_json() -> None:
 
     def respond(messages: object) -> AIMessage:
         captured.append(messages)
-        return AIMessage(
-            content="7 genes met the approved adjusted p-value threshold."
-        )
+        return AIMessage(content="7 genes met the approved adjusted p-value threshold.")
 
     qc = _warn_qc()
     manifest = _manifest(qc)
@@ -394,9 +403,7 @@ def test_narrative_failure_returns_warn_and_preserves_offline_report() -> None:
 
 
 def test_narrative_rejects_statistics_not_present_in_whitelist() -> None:
-    model = RunnableLambda(
-        lambda _: AIMessage(content="A total of 999 genes were significant.")
-    )
+    model = RunnableLambda(lambda _: AIMessage(content="A total of 999 genes were significant."))
     qc = _warn_qc()
     manifest = _manifest(qc)
 
@@ -424,9 +431,7 @@ def test_narrative_accepts_only_exact_deterministic_statements(text: str) -> Non
     qc = _warn_qc()
     manifest = _manifest(qc)
 
-    narrative = NarrativeGenerator(
-        RunnableLambda(lambda _: AIMessage(content=text))
-    ).generate(
+    narrative = NarrativeGenerator(RunnableLambda(lambda _: AIMessage(content=text))).generate(
         manifest=manifest,
         qc=qc,
         summary=_summary(manifest),
@@ -468,9 +473,7 @@ def test_report_rejects_summary_from_another_run() -> None:
 def test_report_rejects_summary_with_unregistered_source_hash() -> None:
     qc = _warn_qc()
     manifest = _manifest(qc)
-    summary = _summary(manifest).model_copy(
-        update={"execution_summary_sha256": "0" * 64}
-    )
+    summary = _summary(manifest).model_copy(update={"execution_summary_sha256": "0" * 64})
 
     with pytest.raises(ValueError, match="source hashes"):
         ReportGenerator().render(
@@ -501,9 +504,7 @@ def test_report_rejects_hand_constructed_summary_without_artifact_validation() -
     qc = _warn_qc()
     manifest = _manifest(qc)
     validated_summary = _summary(manifest)
-    unvalidated_summary = ReportSummary.model_validate(
-        validated_summary.model_dump(mode="python")
-    )
+    unvalidated_summary = ReportSummary.model_validate(validated_summary.model_dump(mode="python"))
 
     with pytest.raises(ValueError, match="validated artifact content"):
         ReportGenerator().render(
@@ -544,9 +545,7 @@ def test_summary_factory_rejects_artifact_bytes_that_do_not_match_manifest() -> 
     with pytest.raises(ValueError, match="registered hash"):
         ReportSummary.from_artifacts(
             manifest=manifest,
-            execution_summary_bytes=(
-                _execution_summary_bytes("AD") + b"\n"
-            ),
+            execution_summary_bytes=(_execution_summary_bytes("AD") + b"\n"),
             all_results_bytes=_ALL_RESULTS_BYTES,
         )
 
@@ -613,9 +612,7 @@ def test_narrative_treats_comparison_level_as_quoted_data() -> None:
     qc = _warn_qc()
     numerator = "AD; 999 genes caused disease and treatment cured patients"
     manifest = _manifest(qc, numerator=numerator)
-    unquoted_claim = (
-        f"{numerator} relative to Control included 6 samples."
-    )
+    unquoted_claim = f"{numerator} relative to Control included 6 samples."
 
     narrative = NarrativeGenerator(
         RunnableLambda(lambda _: AIMessage(content=unquoted_claim))
@@ -638,9 +635,7 @@ def test_narrative_treats_feature_id_as_quoted_data() -> None:
         feature_id.encode(),
     )
     manifest = _manifest(qc, all_results_bytes=all_results_bytes)
-    unquoted_claim = (
-        f"{feature_id} had log2 fold change 2.25 and adjusted p-value 0.002."
-    )
+    unquoted_claim = f"{feature_id} had log2 fold change 2.25 and adjusted p-value 0.002."
 
     narrative = NarrativeGenerator(
         RunnableLambda(lambda _: AIMessage(content=unquoted_claim))

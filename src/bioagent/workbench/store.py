@@ -749,6 +749,55 @@ class WorkbenchStore:
             )
             return changed
 
+    @contextmanager
+    def matrix_plan_publication(self, turn_id: UUID, run_id: UUID) -> Iterator[bool]:
+        """Publish a matrix plan only while cancellation has not won.
+
+        The caller writes the public run index inside this transaction. The
+        same transaction lock is used by cancel_turn, so there is no gap
+        between checking RUNNING and publishing the approval messages.
+        """
+        with self._transaction() as db:
+            turn = self._get(db, "turns", turn_id, Turn, "TURN_NOT_FOUND")
+            if turn.status != TurnStatus.RUNNING or turn.cancel_requested:
+                yield False
+                return
+            yield True
+            pending = PendingInput(
+                request_id=uuid4(),
+                revision=turn.input_revision + 1,
+                question="请核对并批准已确认分组的分析计划。",
+            )
+            self._finish_message(db, turn)
+            now = datetime.now(UTC)
+            for content in (
+                pending.question,
+                "矩阵与分组已确认，规范 counts/metadata 已生成。请核对分析计划后明确批准。",
+            ):
+                self._insert_message(
+                    db,
+                    Message(
+                        id=uuid4(),
+                        conversation_id=turn.conversation_id,
+                        turn_id=turn.id,
+                        role="assistant",
+                        content=content,
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                )
+            self._change_turn(
+                db,
+                turn,
+                TurnStatus.WAITING_USER,
+                run_id=run_id,
+                input_revision=pending.revision,
+                pending_input=pending,
+            )
+            self._insert_event(
+                db, turn.conversation_id, turn.id, "input.required", pending.model_dump(mode="json")
+            )
+
     def accept_response(self, turn_id: UUID, request_id: UUID, revision: int, value: str) -> Turn:
         with self._transaction() as db:
             turn = self._get(db, "turns", turn_id, Turn, "TURN_NOT_FOUND")

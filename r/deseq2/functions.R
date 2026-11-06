@@ -203,6 +203,12 @@ run_deseq2 <- function(
     .deseq2_stop("INVALID_SHRINK_OPTION", "lfc_shrink must be TRUE or FALSE")
   }
   validate_deseq2_inputs(counts, metadata, factor, numerator, denominator)
+  nonzero_features <- rowSums(counts) > 0
+  removed_count <- sum(!nonzero_features)
+  if (removed_count > 0L) {
+    counts <- counts[nonzero_features, , drop = FALSE]
+    message("ALL_ZERO_FEATURES_REMOVED: ", removed_count)
+  }
   .deseq2_require("DESeq2")
   if (isTRUE(lfc_shrink)) {
     .deseq2_require("apeglm")

@@ -30,7 +30,9 @@
       {% if qc.issues %}
       <ul>
         {% for issue in qc.issues %}
-        <li><strong>{{ issue.code }} ({{ issue.status.value }}):</strong> {{ issue.message }}</li>
+        <li><strong>{{ issue.code }} ({{ issue.status.value }}):</strong> {{ issue.message }}
+          {% if issue.evidence %}<pre>{{ issue.evidence | tojson }}</pre>{% endif %}
+        </li>
         {% endfor %}
       </ul>
       {% else %}

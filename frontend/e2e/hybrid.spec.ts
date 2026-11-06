@@ -18,7 +18,9 @@ test("real hybrid chat freezes mode, restores selection, previews originals and 
     }
   });
   await page.goto(root);
+  await page.getByLabel("新建项目", { exact: true }).click();
   await page.getByLabel("新项目名称").fill(name); await page.getByRole("button", { name: "创建项目", exact: true }).click();
+  await page.getByText("＋ 新建聊天", { exact: true }).click();
   await page.getByLabel("新对话名称").fill("混合文献对话"); await page.getByRole("button", { name: "创建对话", exact: true }).click();
   await expect(page.locator(".conversation > header")).toContainText("混合文献对话");
   await page.getByRole("button", { name: "设置", exact: true }).click();
@@ -43,6 +45,7 @@ test("real hybrid chat freezes mode, restores selection, previews originals and 
   await page.getByRole("button", { name: "确认开始 Wiki 构建", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Wiki：COMPLETED" })).toBeVisible({ timeout: 60_000 });
   await page.getByRole("button", { name: "返回聊天", exact: true }).click();
+  await page.locator(".composer-knowledge summary").click();
   await page.getByLabel(`知识库 ${name}`, { exact: true }).check();
   await expect(page.getByLabel("文献检索模式")).toHaveValue("rag");
   const ask = async () => {

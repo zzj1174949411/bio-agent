@@ -45,6 +45,81 @@ def test_terminal_states_cannot_be_revived() -> None:
     assert not can_transition("UNKNOWN", "FAILED")
 
 
+def test_stream_read_timeout_persists_failed_source(tmp_path):
+    import httpx
+
+    from bioagent.geo.client import GeoClient
+    from bioagent.geo.transport import GeoTransport
+
+    class Body(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"^SERIES = GSE123\n"
+            raise TimeoutError("synthetic read timeout")
+
+    transport = GeoTransport(
+        resolver=lambda _: ["8.8.8.8"],
+        connector=lambda method, url, addresses, headers, timeout: httpx.Response(
+            200, stream=Body(), request=httpx.Request(method, url)
+        ),
+        rate_limiter=None,
+    )
+    service = GeoImportService(
+        GeoRepository(tmp_path / "sources"), GeoClient(transport), object(), object()
+    )
+    try:
+        source = service.create_source("GSE123")
+        for _ in range(100):
+            source = service.get_source(source["id"])
+            if source["status"] != "DISCOVERING":
+                break
+            sleep(0.01)
+        assert source["status"] == "FAILED", source
+        assert source["error_code"] == "DOWNLOAD_TIMEOUT"
+    finally:
+        service.close()
+
+
+def test_compressed_supplement_retains_inner_suffix_for_mapping(tmp_path):
+    import gzip
+
+    class Discovery(_Discovery):
+        def discover(self, accession):
+            source = super().discover(accession)
+            candidate = source.candidates[0].model_copy(
+                update={"file_name": "counts.tsv.gz", "compression": Compression.GZIP}
+            )
+            return source.model_copy(update={"candidates": (candidate,)})
+
+    class Downloader:
+        def download(self, url, destination, **kwargs):
+            content = gzip.compress(b"gene\tA\tB\tC\tD\ng1\t1\t2\t3\t4\n")
+            destination.write_bytes(content)
+            return DownloadResult(
+                destination, sha256(content).hexdigest(), len(content), None, None, None
+            )
+
+    service = GeoImportService(
+        GeoRepository(tmp_path / "sources"), Discovery(), Downloader(), object()
+    )
+    try:
+        source = service.create_source("GSE123")
+        for _ in range(100):
+            source = service.get_source(source["id"])
+            if source["status"] != "DISCOVERING":
+                break
+            sleep(0.01)
+        imported = service.request_import(source["id"], source["source"]["candidates"][0]["id"], 1)
+        for _ in range(100):
+            imported = service.get_import(imported["id"])
+            if imported["status"] != "DOWNLOADING":
+                break
+            sleep(0.01)
+        assert imported["status"] == "AWAITING_MAPPING", imported
+        assert imported["preview"]["headers"] == ["gene", "A", "B", "C", "D"]
+    finally:
+        service.close()
+
+
 def test_selection_digest_is_canonical_across_mapping_key_order() -> None:
     source_id = uuid4()
     candidate_id = uuid4()
@@ -615,6 +690,7 @@ def test_publish_failure_discards_new_dataset_before_failing_import(tmp_path, mo
     )
     raw_path = tmp_path / "raw.tsv"
     raw_path.write_text("fixture", encoding="utf-8")
+
     class Datasets:
         discarded: list[str] = []
 
@@ -875,9 +951,7 @@ def test_multi_gse_lookup_accepts_the_follow_up_choice() -> None:
     geo, store = Geo(), Store()
     service = TurnService(store, lambda *_: None, geo=geo)  # type: ignore[arg-type]
     asyncio.run(
-        service._run_geo_lookup(
-            turn, GeoLookupAction(kind="geo_lookup", accession="GSE123")
-        )
+        service._run_geo_lookup(turn, GeoLookupAction(kind="geo_lookup", accession="GSE123"))
     )
     assert geo.calls == 1
     assert store.questions == ["请在 GEO 来源卡中确认可下载的 counts 候选文件。"]
@@ -886,8 +960,11 @@ def test_multi_gse_lookup_accepts_the_follow_up_choice() -> None:
 def test_geo_lookup_without_user_accession_never_discovers() -> None:
     now = datetime.now(UTC)
     turn = Turn(
-        id=uuid4(), conversation_id=uuid4(), client_request_id=uuid4(),
-        created_at=now, updated_at=now,
+        id=uuid4(),
+        conversation_id=uuid4(),
+        client_request_id=uuid4(),
+        created_at=now,
+        updated_at=now,
     )
 
     class Geo:
@@ -903,9 +980,13 @@ def test_geo_lookup_without_user_accession_never_discovers() -> None:
 
         def list_messages(self, *_args, **_kwargs):
             message = Message(
-                id=uuid4(), conversation_id=turn.conversation_id, turn_id=turn.id,
-                role="user", content="Please inspect the public study",
-                created_at=now, updated_at=now,
+                id=uuid4(),
+                conversation_id=turn.conversation_id,
+                turn_id=turn.id,
+                role="user",
+                content="Please inspect the public study",
+                created_at=now,
+                updated_at=now,
             )
             return type("Page", (), {"items": (message,)})()
 
@@ -924,8 +1005,11 @@ def test_geo_lookup_without_user_accession_never_discovers() -> None:
 def test_geo_lookup_must_match_current_user_accession() -> None:
     now = datetime.now(UTC)
     turn = Turn(
-        id=uuid4(), conversation_id=uuid4(), client_request_id=uuid4(),
-        created_at=now, updated_at=now,
+        id=uuid4(),
+        conversation_id=uuid4(),
+        client_request_id=uuid4(),
+        created_at=now,
+        updated_at=now,
     )
 
     class Geo:
@@ -941,8 +1025,13 @@ def test_geo_lookup_must_match_current_user_accession() -> None:
 
         def list_messages(self, *_args, **_kwargs):
             message = Message(
-                id=uuid4(), conversation_id=turn.conversation_id, turn_id=turn.id,
-                role="user", content="Please inspect GSE123", created_at=now, updated_at=now,
+                id=uuid4(),
+                conversation_id=turn.conversation_id,
+                turn_id=turn.id,
+                role="user",
+                content="Please inspect GSE123",
+                created_at=now,
+                updated_at=now,
             )
             return type("Page", (), {"items": (message,)})()
 

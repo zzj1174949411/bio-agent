@@ -106,9 +106,9 @@ def _write_valid_outputs(attempt_dir: Path, spec: ToolSpec) -> None:
             "factor_level": ["AD", "AD", "AD", "Control", "Control", "Control"],
         }
     ).to_csv(attempt_dir / "results" / "pca.csv", index=False)
-    pd.DataFrame(
-        {"sample_id": sample_ids, "size_factor": [1.0] * len(sample_ids)}
-    ).to_csv(attempt_dir / "results" / "size_factors.csv", index=False)
+    pd.DataFrame({"sample_id": sample_ids, "size_factor": [1.0] * len(sample_ids)}).to_csv(
+        attempt_dir / "results" / "size_factors.csv", index=False
+    )
     (attempt_dir / "results" / "execution_summary.json").write_text(
         json.dumps({"status": "success", "n_features": 2, "n_samples": 6}),
         encoding="utf-8",
@@ -127,12 +127,8 @@ class FakeRRunner:
         log_dir = attempt_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         call_number = len(self.calls)
-        (log_dir / "stdout.log").write_text(
-            f"stdout attempt {call_number}", encoding="utf-8"
-        )
-        (log_dir / "stderr.log").write_text(
-            f"stderr attempt {call_number}", encoding="utf-8"
-        )
+        (log_dir / "stdout.log").write_text(f"stdout attempt {call_number}", encoding="utf-8")
+        (log_dir / "stderr.log").write_text(f"stderr attempt {call_number}", encoding="utf-8")
         if self.failures_remaining:
             self.failures_remaining -= 1
             raise RExecutionFailedError(17)
@@ -211,8 +207,7 @@ def test_plan_hash_matches_known_sha256() -> None:
     plan = _plan("b8b439c9-c576-4f87-ae41-69e0810c38c9")
 
     assert calculate_plan_hash(plan) == (
-        "18b2beeaf009656bb40cbea790332d46"
-        "bcb4cae523d91934d6eac656e9302b1f"
+        "18b2beeaf009656bb40cbea790332d46bcb4cae523d91934d6eac656e9302b1f"
     )
 
 
@@ -506,10 +501,7 @@ def test_controller_revalidates_dataset_contents_before_runner_call(
     datasets = DatasetRepository(project_root / "data")
     dataset_id = datasets.create(
         b"feature_id,AD_1,AD_2,CTRL_1,CTRL_2\nGENE_1,10,-1,2,3\n",
-        (
-            b"sample_id,condition\nAD_1,AD\nAD_2,AD\n"
-            b"CTRL_1,Control\nCTRL_2,Control\n"
-        ),
+        (b"sample_id,condition\nAD_1,AD\nAD_2,AD\nCTRL_1,Control\nCTRL_2,Control\n"),
         ".csv",
         ".csv",
     )
@@ -542,29 +534,26 @@ def test_controller_runs_tool_writes_attempt_and_manifest(tmp_path: Path) -> Non
 
     assert result.execution_key == execution_key
     assert result.status is RunStatus.COMPLETED
-    assert result.qc.status is QCStatus.PASS
+    assert result.qc.status is QCStatus.WARN
+    removed = next(issue for issue in result.qc.issues if issue.code == "ZERO_FEATURE_REMOVED")
+    assert removed.evidence["feature_count"] == 1
     assert result.reused is False
     assert len(harness.runner.calls) == 1
     attempt_prefix = f"attempts/{result.attempt_id}"
     attempt_dir = harness.artifacts.resolve(harness.run_id, attempt_prefix)
     parameters = json.loads((attempt_dir / "parameters.json").read_text(encoding="utf-8"))
     assert parameters["counts_path"].endswith(f"runs/{harness.run_id}/input/counts.csv")
-    assert parameters["metadata_path"].endswith(
-        f"runs/{harness.run_id}/input/metadata.csv"
-    )
+    assert parameters["metadata_path"].endswith(f"runs/{harness.run_id}/input/metadata.csv")
     assert parameters["output_dir"].endswith(attempt_prefix)
-    attempt_record = json.loads(
-        (attempt_dir / "attempt.json").read_text(encoding="utf-8")
-    )
+    attempt_record = json.loads((attempt_dir / "attempt.json").read_text(encoding="utf-8"))
     assert attempt_record["status"] == "COMPLETED"
-    assert attempt_record["qc"]["status"] == "PASS"
+    assert attempt_record["qc"]["status"] == "WARN"
     manifest = json.loads(
-        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(
-            encoding="utf-8"
-        )
+        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["attempt_id"] == result.attempt_id
     assert manifest["status"] == "COMPLETED"
+    assert any(issue["code"] == "ZERO_FEATURE_REMOVED" for issue in manifest["qc"]["issues"])
     assert manifest["plan_hash"] == calculate_plan_hash(harness.plan)
     hashes = harness.datasets.hashes(harness.plan.dataset_id)
     assert manifest["input_hashes"] == {
@@ -669,9 +658,7 @@ def test_controller_rejects_manifest_owned_by_another_run(tmp_path: Path) -> Non
     manifest_path = harness.artifacts.resolve(harness.run_id, "manifest.json")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["run_id"] = str(uuid4())
-    foreign_manifest = (
-        json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode()
+    foreign_manifest = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
     manifest_path.write_bytes(foreign_manifest)
 
     with pytest.raises(ExecutionRejectedError, match="MANIFEST_RUN_ID_MISMATCH"):
@@ -754,9 +741,7 @@ def test_reuse_backfills_missing_required_artifact_record(tmp_path: Path) -> Non
     assert reused.reused is True
     assert len(harness.runner.calls) == 1
     updated = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert required_artifact in {
-        artifact["relative_path"] for artifact in updated["artifacts"]
-    }
+    assert required_artifact in {artifact["relative_path"] for artifact in updated["artifacts"]}
 
 
 def test_failed_attempt_retry_keeps_old_logs_and_uses_new_attempt(tmp_path: Path) -> None:
@@ -769,9 +754,7 @@ def test_failed_attempt_retry_keeps_old_logs_and_uses_new_attempt(tmp_path: Path
     assert failed.qc.issues[0].code == "R_EXECUTION_FAILED"
 
     failed_manifest = json.loads(
-        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(
-            encoding="utf-8"
-        )
+        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(encoding="utf-8")
     )
     failed_attempt_id = failed_manifest["attempt_id"]
     failed_stdout = harness.artifacts.resolve(
@@ -791,9 +774,7 @@ def test_failed_attempt_retry_keeps_old_logs_and_uses_new_attempt(tmp_path: Path
     assert failed_stdout.read_text(encoding="utf-8") == original_stdout
     assert failed_stderr.read_text(encoding="utf-8") == original_stderr
     manifest = json.loads(
-        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(
-            encoding="utf-8"
-        )
+        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(encoding="utf-8")
     )
     assert [attempt["status"] for attempt in manifest["attempts"]] == [
         "FAILED",
@@ -805,9 +786,7 @@ def test_interrupted_attempt_is_recovered_into_next_manifest(tmp_path: Path) -> 
     harness = _harness(tmp_path)
     state = _state(harness.run_id, harness.plan)
     interrupted_id = str(uuid4())
-    interrupted_dir = harness.artifacts.resolve(
-        harness.run_id, f"attempts/{interrupted_id}"
-    )
+    interrupted_dir = harness.artifacts.resolve(harness.run_id, f"attempts/{interrupted_id}")
     interrupted_dir.mkdir()
     harness.artifacts.write_json(
         harness.run_id,
@@ -829,18 +808,14 @@ def test_interrupted_attempt_is_recovered_into_next_manifest(tmp_path: Path) -> 
 
     assert completed.status is RunStatus.COMPLETED
     manifest = json.loads(
-        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(
-            encoding="utf-8"
-        )
+        harness.artifacts.resolve(harness.run_id, "manifest.json").read_text(encoding="utf-8")
     )
     assert [attempt["status"] for attempt in manifest["attempts"]] == [
         "FAILED",
         "COMPLETED",
     ]
     assert manifest["attempts"][0]["attempt_id"] == interrupted_id
-    assert manifest["attempts"][0]["qc"]["issues"][0]["code"] == (
-        "EXECUTION_INTERRUPTED"
-    )
+    assert manifest["attempts"][0]["qc"]["issues"][0]["code"] == ("EXECUTION_INTERRUPTED")
     artifact_paths = {artifact["relative_path"] for artifact in manifest["artifacts"]}
     assert f"attempts/{interrupted_id}/logs/stdout.log" in artifact_paths
     assert f"attempts/{interrupted_id}/logs/stderr.log" in artifact_paths

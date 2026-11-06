@@ -144,11 +144,14 @@ def test_output_validation_passes_complete_valid_outputs(tmp_path: Path) -> None
     assert report.issues == ()
 
 
-def test_output_validation_warns_for_na_padj(tmp_path: Path) -> None:
+@pytest.mark.parametrize("missing_pvalue", [False, True])
+def test_output_validation_warns_for_na_padj(tmp_path: Path, missing_pvalue: bool) -> None:
     spec = _write_valid_outputs(tmp_path)
     results_path = tmp_path / "results" / "all_results.csv"
     results = pd.read_csv(results_path)
     results.loc[0, "padj"] = None
+    if missing_pvalue:
+        results.loc[0, "pvalue"] = None
     results.to_csv(results_path, index=False)
     results.iloc[0:0].to_csv(
         tmp_path / "results" / "significant_results.csv",
@@ -160,6 +163,10 @@ def test_output_validation_warns_for_na_padj(tmp_path: Path) -> None:
     assert report.status is QCStatus.WARN
     assert report.issues[0].code == "NA_PADJ_VALUES"
     assert report.issues[0].evidence["proportion"] == 0.5
+    assert report.issues[0].evidence["padj_na_count"] == 1
+    assert report.issues[0].evidence["pvalue_na_count"] == int(missing_pvalue)
+    assert "independent filtering" not in report.issues[0].message.lower()
+    assert "cook" not in report.issues[0].message.lower()
 
 
 def test_output_validation_fails_for_missing_required_artifact(tmp_path: Path) -> None:

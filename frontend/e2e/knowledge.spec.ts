@@ -11,7 +11,9 @@ test("real local PDF to READY to chat evidence, selection restore and revocation
   const results: Record<string, unknown> = { baseName, started: new Date().toISOString(), events: [] };
   const observed: string[] = [];
   await page.goto(root);
+  await page.getByLabel("新建项目", { exact: true }).click();
   await page.getByLabel("新项目名称").fill(baseName); await page.getByRole("button", { name: "创建项目", exact: true }).click();
+  await page.getByText("＋ 新建聊天", { exact: true }).click();
   await page.getByLabel("新对话名称").fill("文献对话"); await page.getByRole("button", { name: "创建对话", exact: true }).click();
   await expect(page.locator(".conversation > header")).toContainText("文献对话");
   await page.getByRole("button", { name: "设置", exact: true }).click();
@@ -34,6 +36,7 @@ test("real local PDF to READY to chat evidence, selection restore and revocation
   await expect(page.getByRole("status").filter({ hasText: "可检索 · READY" })).toHaveCount(3, { timeout: 60_000 });
   results.ready = new Date().toISOString();
   await page.getByRole("button", { name: "返回聊天", exact: true }).click();
+  await page.locator(".composer-knowledge summary").click();
   await page.getByLabel(`知识库 ${baseName}`, { exact: true }).check();
   await expect(page.getByLabel(`知识库 ${baseName}`, { exact: true })).toBeChecked();
   await page.getByLabel("消息", { exact: true }).fill("文献 Results table mass mg Figure Control treated 图表说明什么？");

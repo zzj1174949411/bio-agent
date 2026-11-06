@@ -103,6 +103,7 @@ test("keyword GEO search requires selection and raw-count confirmation before ap
   await page.getByRole("checkbox", { name: "确认当前文件是原始 counts" }).check();
   await page.getByRole("button", { name: "确认样本映射" }).click();
   await expect(page.getByText("状态：READY")).toBeVisible();
+  await page.getByLabel("我已核对本次方案").check();
   await page.getByRole("button", { name: "批准分析" }).click();
   await expect(page.getByText("运行状态：COMPLETED")).toBeVisible();
 });

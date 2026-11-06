@@ -36,11 +36,13 @@ async function fixture(page: Page) {
   return uploads;
 }
 
-test("desktop message and side columns scroll independently; settings and knowledge remain reachable", async ({ page }, testInfo) => {
+test("desktop chat and optional files scroll independently; settings and knowledge remain reachable", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 }); await fixture(page);
   await expect(page.getByRole("link", { name: "下载 result-79.csv", exact: true })).toBeAttached();
+  await expect(page.getByRole("complementary", { name: "文件预览" })).toHaveCount(0);
+  await page.getByRole("button", { name: "文件", exact: true }).click();
   const header = page.locator(".conversation > header"); const composer = page.locator(".composer");
-  const left = page.locator(".sidebar"); const right = page.locator(".right-column"); const timeline = page.locator(".timeline");
+  const left = page.locator(".sidebar-scroll"); const right = page.locator(".file-body"); const timeline = page.locator(".timeline");
   const boxes = await Promise.all([header, composer, left, right].map((item) => item.boundingBox()));
   await timeline.hover(); await page.mouse.wheel(0, 800);
   await expect.poll(() => timeline.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
@@ -95,9 +97,11 @@ test("390 and 1000 wide screens keep resources, settings and knowledge controls 
     await page.setViewportSize({ width, height: 844 });
     await page.getByRole("link", { name: "下载 result-79.csv", exact: true }).scrollIntoViewIfNeeded();
     await expect(page.getByRole("link", { name: "下载 result-79.csv", exact: true })).toBeInViewport();
+    if (width < 900) await page.getByRole("button", { name: "项目与对话" }).click();
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("button", { name: "保存模型", exact: true }).scrollIntoViewIfNeeded();
     await expect(page.getByRole("button", { name: "保存模型", exact: true })).toBeInViewport();
+    if (width < 900) await page.getByRole("button", { name: "项目与对话" }).click();
     await page.getByRole("button", { name: "知识库", exact: true }).click();
     await page.locator(".knowledge-document").last().getByRole("button", { name: "删除文献" }).scrollIntoViewIfNeeded();
     await expect(page.locator(".knowledge-document").last().getByRole("button", { name: "删除文献" })).toBeInViewport();

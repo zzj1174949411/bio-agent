@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from typing import TYPE_CHECKING, Any
 
 from bioagent.artifacts.manifest import AgentContext
@@ -24,6 +25,7 @@ class AnalysisService:
         goal: str,
         agent_context: Mapping[str, object] | None = None,
         planner: object | None = None,
+        publication_guard: Callable[[str], AbstractContextManager[bool]] | None = None,
     ) -> str:
         # Importing the validation helper lazily avoids a route/service cycle.
         from bioagent.api.routes import _stored_validation
@@ -53,11 +55,37 @@ class AnalysisService:
             from bioagent.api.routes import _workflow_state
 
             state = _workflow_state(result)
-            self._dependencies.run_repository.write(run_id, state)
             if planner is not None and state.get("status") != "AWAITING_APPROVAL":
                 # A failed bound model must not masquerade as an approval card.
                 # Keep the diagnostic index, but never fall back to a default.
+                self._dependencies.run_repository.write(run_id, state)
                 raise ModelError("MODEL_OUTPUT_INVALID")
+            # The run index is the public approval boundary. Matrix publication
+            # shares the turn cancellation transaction before exposing this index.
+            with (
+                self._dependencies.run_lock(run_id)
+                if publication_guard is not None
+                else nullcontext()
+            ):
+                try:
+                    guard = publication_guard(run_id) if publication_guard else nullcontext(True)
+                    with guard as publish:
+                        if not publish:
+                            from langgraph.types import Command
+
+                            state = _workflow_state(
+                                graph.invoke(Command(resume={"action": "cancel"}), config)
+                            )
+                        self._dependencies.run_repository.write(run_id, state)
+                except Exception:
+                    if publication_guard is not None and state.get("status") == "AWAITING_APPROVAL":
+                        from langgraph.types import Command
+
+                        state = _workflow_state(
+                            graph.invoke(Command(resume={"action": "cancel"}), config)
+                        )
+                        self._dependencies.run_repository.write(run_id, state)
+                    raise
             return run_id
         except Exception:
             # A run directory without an index is not an analysis record.

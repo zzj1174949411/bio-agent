@@ -1,3 +1,4 @@
+import http.client
 import json
 from pathlib import Path
 
@@ -77,12 +78,13 @@ def test_discover_classifies_and_deterministically_orders_candidates() -> None:
     assert "count" in found["GSE12345_count_like.txt"].evidence[0].lower()
     assert found["GSE12345_count_like.txt"].data_kind is not DataKind.RAW_COUNTS
     assert [candidate.data_kind for candidate in source.candidates] == sorted(
-        (candidate.data_kind for candidate in source.candidates), key=lambda kind: {
+        (candidate.data_kind for candidate in source.candidates),
+        key=lambda kind: {
             DataKind.RAW_COUNTS: 0,
             DataKind.UNKNOWN: 1,
             DataKind.NORMALIZED: 2,
             DataKind.UNSUPPORTED: 3,
-        }[kind]
+        }[kind],
     )
     assert [candidate.file_name for candidate in source.importable_candidates] == [
         "GSE12345_raw_counts_GRCh38.tsv.gz",
@@ -94,9 +96,10 @@ def test_discover_classifies_and_deterministically_orders_candidates() -> None:
 def test_no_supported_candidate_has_stable_error_and_reasons() -> None:
     source = _client(
         catalog={"records": []},
-        soft=(FIXTURES / "family.soft").read_text(encoding="utf-8").replace(
-            "GSE12345_submitter_raw_counts.tsv.gz", "GSE12345_TPM_only.tsv.gz"
-        ).replace("GSE12345_count_like.txt", "GSE12345_reads_only.fastq.gz"),
+        soft=(FIXTURES / "family.soft")
+        .read_text(encoding="utf-8")
+        .replace("GSE12345_submitter_raw_counts.tsv.gz", "GSE12345_TPM_only.tsv.gz")
+        .replace("GSE12345_count_like.txt", "GSE12345_reads_only.fastq.gz"),
     ).discover("GSE12345")
 
     assert source.error_code == "GEO_NO_SUPPORTED_COUNTS"
@@ -132,3 +135,125 @@ def test_discover_reports_mixed_species_and_platforms() -> None:
 
     assert "GEO_MULTIPLE_ORGANISMS" in source.warnings
     assert "GEO_MULTIPLE_PLATFORMS" in source.warnings
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        {"error": "Empty id list - nothing todo"},
+        {
+            "header": {"type": "esummary", "version": "0.3"},
+            "esummaryresult": ["Empty id list - nothing todo"],
+        },
+    ],
+)
+def test_real_transport_streams_are_bounded_closed_and_include_family(catalog) -> None:
+    from bioagent.geo.transport import GeoTransport
+
+    streams = []
+
+    class Body(httpx.SyncByteStream):
+        closed = False
+
+        def __init__(self, body):
+            self.body = body
+
+        def __iter__(self):
+            yield self.body
+
+        def close(self):
+            self.closed = True
+
+    def connector(method, url, addresses, headers, timeout):
+        request = httpx.Request(method, url)
+        if request.url.host == "www.ncbi.nlm.nih.gov":
+            body = (FIXTURES / "family.soft").read_bytes()
+        else:
+            body = json.dumps(catalog).encode()
+        stream = Body(body)
+        streams.append((request, stream))
+        return httpx.Response(200, stream=stream, request=request)
+
+    source = GeoClient(GeoTransport(resolver=lambda _: ["8.8.8.8"], connector=connector)).discover(
+        "GSE12345"
+    )
+    assert len(source.samples) == 4
+    assert streams[0][0].url.params["targ"] == "all"
+    assert all(stream.closed for _, stream in streams)
+    assert source.importable_candidates  # optional catalog failure keeps submitter files
+
+
+@pytest.mark.parametrize("declared", [True, False])
+def test_streaming_metadata_limit_stops_reading_and_closes(monkeypatch, declared):
+    from bioagent.geo import client as module
+    from bioagent.geo.transport import GeoTransport
+
+    monkeypatch.setattr(module, "_MAX_METADATA_BYTES", 8)
+
+    class Body(httpx.SyncByteStream):
+        read_count = 0
+        closed = False
+
+        def __iter__(self):
+            for _ in range(10):
+                self.read_count += 1
+                yield b"12345"
+
+        def close(self):
+            self.closed = True
+
+    body = Body()
+
+    def connector(method, url, addresses, headers, timeout):
+        return httpx.Response(
+            200,
+            stream=body,
+            headers={"Content-Length": "50"} if declared else {},
+            request=httpx.Request(method, url),
+        )
+
+    transport = GeoTransport(resolver=lambda _: ["8.8.8.8"], connector=connector)
+    with pytest.raises(GeoDiscoveryError, match="GEO_METADATA_TOO_LARGE"):
+        GeoClient(transport).discover("GSE12345")
+    assert body.closed
+    assert body.read_count == (0 if declared else 2)
+
+
+@pytest.mark.parametrize("phase", ["soft", "catalog"])
+@pytest.mark.parametrize(
+    "error", [TimeoutError, OSError, httpx.ReadError, httpx.ReadTimeout, http.client.IncompleteRead]
+)
+def test_metadata_body_read_failures_are_stable_and_closed(phase, error):
+    from bioagent.geo.transport import GeoTransport, GeoTransportError
+
+    class BrokenBody(httpx.SyncByteStream):
+        closed = False
+
+        def __iter__(self):
+            yield b"partial body"
+            if error is http.client.IncompleteRead:
+                raise error(b"synthetic private transport detail")
+            raise error("synthetic private transport detail")
+
+        def close(self):
+            self.closed = True
+
+    body = BrokenBody()
+
+    def connector(method, url, addresses, headers, timeout):
+        request = httpx.Request(method, url)
+        if phase == "catalog" and request.url.host == "www.ncbi.nlm.nih.gov":
+            return httpx.Response(200, content=(FIXTURES / "family.soft").read_bytes())
+        return httpx.Response(200, stream=body, request=request)
+
+    transport = GeoTransport(resolver=lambda _: ["8.8.8.8"], connector=connector, rate_limiter=None)
+    with pytest.raises(GeoTransportError) as caught:
+        GeoClient(transport).discover("GSE12345")
+    expected = (
+        "DOWNLOAD_TIMEOUT"
+        if error in {TimeoutError, httpx.ReadTimeout}
+        else "DOWNLOAD_NETWORK_ERROR"
+    )
+    assert caught.value.code == expected
+    assert "private" not in str(caught.value)
+    assert body.closed

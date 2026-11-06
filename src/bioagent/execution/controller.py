@@ -605,13 +605,20 @@ class ExecutionController:
         spec: ToolSpec,
         attempt_dir: Path,
     ) -> QCReport:
-        return validate_deseq2_outputs(
+        output = validate_deseq2_outputs(
             spec=spec,
             attempt_dir=attempt_dir,
             expected_feature_ids=tuple(str(value) for value in validation.counts.index),
             expected_sample_ids=tuple(str(value) for value in validation.counts.columns),
             alpha=plan.options.alpha,
         )
+        issues = (*validation.qc.issues, *output.issues)
+        status = QCStatus.PASS
+        if any(issue.status is QCStatus.FAIL for issue in issues):
+            status = QCStatus.FAIL
+        elif any(issue.status is QCStatus.WARN for issue in issues):
+            status = QCStatus.WARN
+        return QCReport(status=status, issues=issues)
 
     def _finish_attempt(
         self,

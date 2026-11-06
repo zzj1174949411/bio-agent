@@ -79,6 +79,8 @@ def _completed_app(tmp_path: Path) -> tuple[Any, str, bytes]:
     )
     app = create_app(
         Settings(
+            _env_file=None,
+            deepseek_api_key=None,
             data_dir=tmp_path / "data",
             runs_dir=runs_dir,
             checkpoint_db=tmp_path / "checkpoints.sqlite",
@@ -106,6 +108,8 @@ def test_artifact_list_and_download_use_manifest_ids(tmp_path: Path) -> None:
         {
             "artifact_id": artifact_id,
             "sha256": sha256(content).hexdigest(),
+            "name": "results.csv",
+            "media_type": "text/csv",
         }
     ]
     assert len(artifact_id) == 64

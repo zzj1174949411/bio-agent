@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import http.client
+import json
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -20,7 +22,7 @@ from bioagent.geo.models import (
     GeoSample,
     GeoSource,
 )
-from bioagent.geo.transport import GeoTransport
+from bioagent.geo.transport import GeoTransport, GeoTransportError
 
 _ACCESSION = re.compile(r"GSE[1-9][0-9]*")
 _MAX_METADATA_BYTES = 10 * 1024 * 1024
@@ -72,14 +74,17 @@ class GeoClient:
     def _fetch_soft(self, accession: str) -> str:
         response = self._get(
             "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi",
-            params={"acc": accession, "targ": "self", "form": "text", "view": "quick"},
+            params={"acc": accession, "targ": "all", "form": "text", "view": "quick"},
             headers={"Accept": "text/plain"},
         )
-        if response.status_code == 404:
-            raise GeoDiscoveryError("GEO_NOT_FOUND")
-        if response.status_code >= 400:
-            raise GeoDiscoveryError("GEO_DISCOVERY_FAILED")
-        return _decode_metadata(response, "GEO_SOFT_INVALID")
+        try:
+            if response.status_code == 404:
+                raise GeoDiscoveryError("GEO_NOT_FOUND")
+            if response.status_code >= 400:
+                raise GeoDiscoveryError("GEO_DISCOVERY_FAILED")
+            return _decode_metadata(response, "GEO_SOFT_INVALID")
+        finally:
+            response.close()
 
     def _fetch_counts_catalog(self, accession: str) -> tuple[dict[str, Any], ...]:
         """Read NCBI's metadata catalog, never construct a candidate download URL."""
@@ -89,16 +94,24 @@ class GeoClient:
             params={"db": "gds", "term": f"{accession}[ACCN]", "retmode": "json"},
             headers={"Accept": "application/json"},
         )
-        if response.status_code >= 400:
-            return ()
-        if _response_too_large(response):
-            raise GeoDiscoveryError("GEO_METADATA_TOO_LARGE")
         try:
-            payload = response.json()
+            if response.status_code >= 400:
+                return ()
+            payload = json.loads(_read_metadata(response))
         except ValueError as error:
+            if isinstance(error, GeoDiscoveryError):
+                raise
             raise GeoDiscoveryError("GEO_CATALOG_INVALID") from error
+        finally:
+            response.close()
         if not isinstance(payload, dict):
             raise GeoDiscoveryError("GEO_CATALOG_INVALID")
+        # The optional catalog can return an official eutils error instead of records.
+        # It must not prevent discovery of the submitter's SOFT supplementary files.
+        if "records" not in payload and (
+            "error" in payload or isinstance(payload.get("esummaryresult"), list)
+        ):
+            return ()
         records = payload.get("records", ())
         if not isinstance(records, list):
             raise GeoDiscoveryError("GEO_CATALOG_INVALID")
@@ -106,23 +119,31 @@ class GeoClient:
 
 
 def _decode_metadata(response: httpx.Response, error_code: str) -> str:
-    if _response_too_large(response):
-        raise GeoDiscoveryError("GEO_METADATA_TOO_LARGE")
     try:
-        return response.content.decode("utf-8")
+        return _read_metadata(response).decode("utf-8")
     except UnicodeDecodeError as error:
         raise GeoDiscoveryError(error_code) from error
 
 
-def _response_too_large(response: httpx.Response) -> bool:
+def _read_metadata(response: httpx.Response) -> bytes:
     content_length = response.headers.get("content-length")
     if content_length is not None:
         try:
             if int(content_length) > _MAX_METADATA_BYTES:
-                return True
-        except ValueError:
-            return True
-    return len(response.content) > _MAX_METADATA_BYTES
+                raise GeoDiscoveryError("GEO_METADATA_TOO_LARGE")
+        except ValueError as error:
+            raise GeoDiscoveryError("GEO_METADATA_TOO_LARGE") from error
+    body = bytearray()
+    try:
+        for block in response.iter_bytes():
+            if len(body) + len(block) > _MAX_METADATA_BYTES:
+                raise GeoDiscoveryError("GEO_METADATA_TOO_LARGE")
+            body.extend(block)
+    except (httpx.TimeoutException, TimeoutError) as error:
+        raise GeoTransportError("DOWNLOAD_TIMEOUT") from error
+    except (httpx.HTTPError, OSError, http.client.HTTPException) as error:
+        raise GeoTransportError("DOWNLOAD_NETWORK_ERROR") from error
+    return bytes(body)
 
 
 def _build_source(
@@ -164,8 +185,7 @@ def _build_source(
     if not importable:
         error_code = "GEO_NO_SUPPORTED_COUNTS"
         reasons = tuple(
-            f"{candidate.file_name}: {candidate.data_kind.value}"
-            for candidate in candidates
+            f"{candidate.file_name}: {candidate.data_kind.value}" for candidate in candidates
         ) or ("No supplementary or NCBI-generated count matrix was recorded.",)
     return GeoSource(
         id=source_id,
@@ -210,11 +230,7 @@ def _parse_soft(soft: str) -> tuple[dict[str, object] | None, tuple[GeoSample, .
     series = next((entity for entity in entities if entity["entity"] == "SERIES"), None)
     if series is not None and not isinstance(series["accession"], str):
         raise GeoDiscoveryError("GEO_SOFT_INVALID")
-    samples = tuple(
-        _to_sample(entity)
-        for entity in entities
-        if entity["entity"] == "SAMPLE"
-    )
+    samples = tuple(_to_sample(entity) for entity in entities if entity["entity"] == "SAMPLE")
     return series, samples
 
 

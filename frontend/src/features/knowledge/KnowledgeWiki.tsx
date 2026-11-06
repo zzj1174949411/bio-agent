@@ -1,3 +1,4 @@
+import { EvidenceSurface } from "../../components/FilePreview";
 import { useEffect, useRef, useState } from "react";
 import { ApiClient } from "../../api/client";
 import type { ModelProfile } from "../../api/types";
@@ -56,6 +57,6 @@ export function KnowledgeWiki({ api, base }: { api: ApiClient; base: string }) {
       {page.statements.map((s, i) => <div key={i}><p>{s.text}</p><p>原研究条件：{s.conditions}</p>{s.candidate_disagreement && <p>候选分歧：需查原文，不作权威裁决。</p>}{s.citations.map((c, j) => <blockquote key={j}>{c.quote}<button onClick={() => void act(() => source(c.chunk_id))}>原文证据 · PDF 第 {c.reference.page} 页</button></blockquote>)}</div>)}
       <nav aria-label="Wiki 相关页面">{page.links.map((key) => { const target = list?.items.find((p) => p.key === key); return target && <button disabled={busy || target.status === "STALE"} key={key} onClick={() => void act(() => open(target.id))}>{target.title}</button>; })}</nav>
     </article>}
-    {preview && <div className="evidence-preview" role="dialog" aria-label="Wiki 原文预览"><button onClick={() => setPreview(null)}>关闭预览</button><h3>PDF 第 {preview.value.page} 页</h3><p>{preview.value.element.text}</p><a href={api.wikiUrl(base, preview.page, `evidence/${encodeURIComponent(preview.chunk)}/pdf`)} download="document.pdf">下载原始 PDF</a><img className="pdf-page" src={api.wikiUrl(base, preview.page, `evidence/${encodeURIComponent(preview.chunk)}/page`)} alt={`Wiki 原文 PDF 第 ${preview.value.page} 页`} onError={() => { setPreview(null); setError("Wiki 原文预览失效或不可用，请重新核验页面。"); }} /></div>}
+    {preview && <EvidenceSurface title="Wiki 原文预览" onClose={() => setPreview(null)}><button onClick={() => setPreview(null)}>关闭预览</button><h3>PDF 第 {preview.value.page} 页</h3><p>{preview.value.element.text}</p><a href={api.wikiUrl(base, preview.page, `evidence/${encodeURIComponent(preview.chunk)}/pdf`)} download="document.pdf">下载原始 PDF</a><img className="pdf-page" src={api.wikiUrl(base, preview.page, `evidence/${encodeURIComponent(preview.chunk)}/page`)} alt={`Wiki 原文 PDF 第 ${preview.value.page} 页`} onError={() => { setPreview(null); setError("Wiki 原文预览失效或不可用，请重新核验页面。"); }} /></EvidenceSurface>}
   </section>;
 }

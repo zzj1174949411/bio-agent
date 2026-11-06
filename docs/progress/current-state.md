@@ -1,24 +1,59 @@
 # Bio-Agent 当前状态
 
-**最后更新：** 2026-10-22
+**最后更新：** 2026-10-23
 
 **当前分支：** `agent/bio-agent-mvp`
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task45文献分块工程验证与本地对照完成，本次任务45提交收尾；Task46聊天主界面及知识库入口方案已获用户接受，用户授权指挥其他聊天开始工作。下一实施任务47为聊天界面改造及既有能力整合：左侧项目/聊天与底部知识库入口，中间对话及附件输入框，输入框旁选库，右侧文件按需预览。正式界面尚未修改。单矩阵/自动metadata另排后续任务，暂不做FASTQ或新统计方法。
+**当前阶段：** Task49通过父窗口独立工程验收。单矩阵上传与真实公开矩阵GSE60450均可经来源/分组确认、人工审批到真实DESeq2、四图、QC、报告及摘要；不再要求用户额外提供metadata文件。三路并行审查的七项问题已修复，父最终串行边界回归22项通过；公开数据每组2只独立小鼠的WARN及展示限制保留。完整独立证据和失败复验见docs/reviews/2026-10-23-task49-parent.md，使用见docs/public-matrix.md。模型测试仍Mock，不等于真实模型效果验收；本轮完成后删除自动跟进，不进入50。
 
 **任务44历史验收：** 44实现46a0b59、故障修复3a27695、初评记录7e6eb58；父会话新跑35项聚焦回归及真实本地链路通过，复核真实三组三十题与台账。原预算共49/50次、584607输入bytes，RAG10完成、Wiki9完成/1失败、hybrid10完成；混合未显示稳定优势且更慢，继续保留RAG默认。正式专家盲评仍HUMAN_BLIND_REVIEW_PENDING，不能宣称准确率提升或历史MODEL_UNAVAILABLE唯一根因已确定。真实GEO公网验收与Task15发布收尾独立保留。
 
 ## 恢复工作时先做什么
 
-**2026-10-22 新授权优先：** 用户已接受新版聊天原型和知识库管理/选库方案，并授权其他聊天开始工作。Task46规格/计划为`2026-10-22-expression-workbench-design.md` / `2026-10-22-expression-prototype.md`。先由任务45原聊天收尾已有改动，再由既有前端聊天制定唯一任务47计划并实施聊天界面改造；共用worktree单写入，47在父会话释放前只读。单矩阵/自动metadata是后续任务，不能以假附件或演示结果冒充接通。保留renv，不读取Key、不重跑付费试验、不操作根目录runs。
+**2026-10-23 验收收尾：** 用户授权逐项完成、父窗口检查，并明确要求增加并行聊天。三路按文件互斥修复，父窗口是唯一Git索引/提交者；现均已停写。48/49父验收完成，已达到本轮批准的表达矩阵链路，收尾提交后删除bio-agent自动跟进。保留renv、旧49/50台账、用户8000与根runs，不自动新增编号。
 
 1. 进入 `.worktrees/bio-agent-mvp`。
 2. 阅读根目录 `AGENTS.md`、已批准设计、实施计划和本文件。
 3. 运行 `git status --short --branch` 和 `git log -5 --oneline`。
-4. 任务46审阅已完成。任务45在本次提交收尾；下一任务47由既有前端聊天在父会话释放写入后写具体计划、关键失败测试并实施。一次只做一个编号任务，不同时提交共享Git索引。不重跑付费试验、不消耗剩余1次额度，不重置台账或换目录绕过限额。正式专家盲评待人工，完整60题未授权。图片仍仅图注/OCR，`visual_semantics=not_performed`。
+4. 当前48/49均已验收；先阅读49父验收及来源说明，不重复认领或恢复已关闭执行session。后续按用户新要求制定下一任务；真实provider仍独立保留，不能消耗旧额度，不并发提交。
 5. 自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过；保留 Task 15 的历史发布记录。
+
+## Task49 真实公开矩阵完整链路（2026-10-23）
+
+- 父窗口独立验收：基线d366d24，真实GEO/单文件双路径各审批后1次R、批准前0次，输出20,047行、上2,794/下2,953及登记产物hash一致；独立115项基线与R21tests/44断言通过。三路修复上传替换/转置、阈值等号/NA描述、GEO正文异常/上传并发/取消发布竞态。修复后父138项通过，另1项解析超时隔离通过；随后串行21项通过/1项故障测试前置失败，增强注入命中断言与仅测试fixture预算后最终22项/174.57s全通过。前端9组件、build/typecheck、矩阵3项及公开数据2项浏览器通过。真实缓存R再跑结果SHA不变，NA证据padj3887/pvalue0。原始失败、根因未锁定部分及限制如实保留，不冒称所有历史集合最终全绿。最终全仓Ruff/mypy114与8hooks通过，详见49-parent记录。
+- 起点5a03065，先编写`docs/superpowers/plans/2026-10-23-public-matrix.md`后实施唯一49；来源/命令见`docs/public-matrix.md`，完整红绿、失败尝试和限制见`docs/reviews/2026-10-23-task49.md`。仅既有worktree/agent分支，无真实LLM/Key/付费额度、依赖升级、用户8000/根runs操作或push/merge。
+- 官方GSE60450作者featureCounts read counts，SOFT核实mm10/Subread、完整列名/组织/平台/阶段。GSM1480297/298 Virgin与GSM1480301/302 Lactating，均基底细胞、不同阶段独立小鼠，每组2，非同鼠基底/腔面配对比较。原矩阵27179基因/12样本及Length保留；确认排除8个其他细胞/阶段样本及Length。gzip 513592 bytes，SHA256 906b6ec4c33e95ca0ba454a3e0d07ad74e9cb7528ee38b89a9b122f5674a5f0d，URL/UTC下载审计及SOFT hash见使用说明。
+- 真实暴露的兼容问题均先红灯：stream.content/超限未关闭、来源targ=self缺样本、可选目录真实空响应、gzip临时名丢内部后缀、32KiB聊天限额误拦矩阵、R未遵循Python全零去除、最终QC覆盖输入WARN、报告未显示证据数量。仅multipart矩阵上传沿既有限额；普通JSON32KiB、owner/CSRF、DNS固定/allowlist不变。R只移除本次4样本全零行，不增加低表达/方差过滤；小fixture剩余基因log2FC/p/padj与无零基线1e-10一致。
+- 最终真实命令`uv --cache-dir data/task48/uv-cache run --no-sync --offline python scripts/verify_public_matrix.py --download --output data/task49/final-verification`退出0：搜索/选择/来源/下载/映射API到原READY待审批run 80198855-2d40-499d-a979-97d85b67f330，单矩阵API到7a279485-d68b-456a-9ccb-80b1fdc69d99；不额外创建第三个GEO run。Mock Planner，审批前0次R，明确批准后各1次真实R，两路径20047行log2FC/pvalue/padj在rtol1e-8/atol1e-10一致。全部产物/源映射/输入hash/报告与四图校验通过。独立缓存默认模式`--output data/task49/offline-final`也退出0，真实R1次、结果hash相同，不冒称当次GEO联网通过。
+- 27179输入行中全零7132，结果20047行，16160有效padj，上调2794/下调2953（alpha0.05/no shrink/seed42/Lactating相对Virgin）；QC WARN保留全零数量/每组2样本/3887个NA padj，manifest、R日志、HTML报告及摘要可查。CSV SHA256 8127103408e0512880265c06e2d1f599326890ff1eaedc2693f67ca541fd319f。没有从结果挑选样本或基因，也不将工程数值一致当原论文全部结论复现。
+- 最终pytest执行/GEO/报告/transport/矩阵/聊天集合 **187 passed in102.90s**；上次152 passed/1 WinError5文件替换失败，原单项复验1 passed in6.47s，随后整套通过。全R/testthat **21 tests/44 passed expectations/0 failed/0 errors**，保留Windows locale和包构建版本warning。专用真实数据route-fixture浏览器1280/390px **2 passed in5.0s**，不冒充现场模型/R浏览器测试；截图已看。Ruff、mypy114文件和前端typecheck通过。8hooks/cached门禁见收尾记录。
+- 局限：每组仅2独立重复/正式分析宜更多；NCBI-generated counts目录、任意GEO格式、TPM/配对/FASTQ和真实模型未验收。四图已目视并与最终PNG hash一致；现有PCA长原始标签可裁切，完整ID/坐标在pca.csv，窄列CSV数值换行，未宣称投稿级排版。所有原始数据/产物/截图在ignored data/task49。renv原SHA256仍为A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A，仅留用户原改动。
+- 收尾：8项pre-commit全部Passed，明确暂存计划列出的20份49文件；`git diff --cached --check`退出0后以任务49 message本地提交，提交号及提交后状态以Git为准。renv/数据/SQLite/图表/.env均不入暂存。提交后停止写入，等待父会话独立验收，不进入50。
+
+## Task48 单表达矩阵完整链路（2026-10-23）
+
+- 审查修复：父会话发现`dd58288`的Planner异常后矩阵仍为PLANNING；finally的UPDATE被外层事务回滚。正式红灯先跑出 **3 failed, 11 deselected in48.47s**。改为独立事务持久化FAILED/MATRIX_PLANNING_FAILED；启动将遗留PLANNING及对应turn稳定结束为FAILED/MATRIX_PLANNING_INTERRUPTED，不自动规划或新建run；失败记录重复确认409。确认JSON排序对象键后生成SHA256，键重排幂等且兼容旧确认记录。修复验证与提交结果见下条收尾记录。
+- 修复验证：`uv --cache-dir data/task48/uv-cache run --no-sync --offline pytest tests/integration/api/test_matrices.py tests/integration/api/test_workbench.py -q -p no:cacheprovider --basetemp data/task48/fix-regression --tb=short`为 **24 passed in86.46s**；全仓Ruff通过，mypy **114 source files**通过。本轮全部Planner为Mock，未重复真实R或前端检查，统计实现及前端未变。父会话仍需独立验收，本聊天不开始49；提交门禁见下条收尾记录。
+- 修复收尾：8项pre-commit全通过，仅暂存3份后端、1份测试和3份文档；`git diff --cached --check`退出0后以任务48修复message本地提交，提交号以Git为准。renv SHA256仍为A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A，留作用户原有未提交改动；不push/merge、不操作根runs或用户8000。
+- 计划`2026-10-23-single-matrix.md`，使用说明`docs/single-matrix.md`，实际复核`docs/reviews/2026-10-23-task48.md`。owner/CSRF受控上传、持久化原始hash与确认、有限worker解析/转置；数值/ID/分组由确定性代码检查，raw类型和来源必须明确。确认自动生成标准数据并直接进入原Planner/AnalysisService待审批，模型方向不符拒绝。
+- 前端加号单文件入口和对话表单，不需用户提供第二文件。旧pair/GEO/知识库保留；科学映射替换重置、请求代际隔离、确认不可改写，已确认dataset/turn/run可跨重启恢复。实际完成run提供哈希核验的结果摘要和继续追问草稿入口。
+- 真实R+矩阵/产物API **17 passed in94.51s**，额外原聊天/知识API **18 passed in11.67s**；未批准R调用0，批准后新旧各1次，200基因log2FC/p/padj在1e-8/1e-10容差一致，四图/QC/报告/manifest SHA核验通过。完整ignored记录`data/task48/final-verification/`。
+- 前端 **51 passed/23 files (11.29s)**、typecheck/build通过；默认浏览器 **16 passed/3 skipped (26.2s)**，新增矩阵结果阅读后专项 **3 passed (7.2s)**，1280/390/320px。截图`data/task48/matrix-final/`已查看。浏览器fixture与真实R分开报告，不冒称三项Docling/Wiki/hybrid服务用例已重跑。Ruff/mypy114 source files通过、8hooks/cached检查通过；提交门禁见计划。
+- 限制：只支持UTF-8 CSV/TSV raw counts非配对双组，不含TPM方法/自动设计猜测/FASTQ/通用附件；未确认编辑未持久化。来源原始bytes与确认在独立SQLite，manifest绑定规范数据hash，尚无跨机来源导出。无真实模型、公网来源或任意任务效果声明。
+- 保留renv SHA256 A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A，不读Key、不使用付费额度、不操作用户8000/根runs，不push/merge。48提交后停止，交父会话独立验收。
+
+## Task47 聊天主界面与按需文件（2026-10-22）
+
+- 起点`b5aa262`，父会话明确释放写入后先写`docs/superpowers/plans/2026-10-22-chat-workspace.md`，TDD实施唯一47。使用说明`docs/workbench.md`；不复用原型模拟回复/统计结果到生产。
+- App保留项目/设置，ChatWorkspace按conversation挂载，草稿/pair文件/数据选择独立内存缓存，导航与异步代际阻止旧响应写入新聊天。迟到history与SSE合并，已完成分析不会因后来普通聊天而丢失文件；run/plan/产物从原API恢复，关闭预览不终止运行。
+- 默认中心聊天无常驻右栏；左下知识库/设置，输入框选库/原有RAG-hybrid模式。加号只提供真实counts+metadata导入和明确知识库入口，不假装支持普通PDF附件或自动metadata。GEO、Wiki、Skills/MCP及模型配置能力保留。
+- 真实计划参数和确认/批准、拒绝、运行状态/QC/文件链接留在对话；run cancel复用原接口，服务端revision/hash/人工审批不变。产物列表仅新增basename和固定media_type，下载仍不透明ID+hash核验。文本/CSV转义，有界读取、PNG/JPEG和sandbox HTML按需预览；原文证据侧栏撤销沿用原服务。
+- 前端 **50 tests / 22 files (10.02s)**，typecheck/build通过；定向产物/工作台/分析API **23 passed (106.25s)**，模型均Mock。全部默认浏览器 **13 passed / 3 skipped (21.8s)**，真实HTTP route fixtures，含320/390px、深色、multipart导入、草稿/数据/文件隔离、审批取消恢复和100PDF批处理。三项需独立真实Docling/Wiki/hybrid服务的旧测试按既有开关跳过，不宣称已重跑真实文献链路。
+- Ruff通过、mypy112 source files通过、八项pre-commit和cached diff检查通过；提交范围及记录见任务计划。截图ignored `data/task47/playwright-final2/`，已实际查看桌面、报告预览、320/390px、深色。没有真实Key/模型/R调用、依赖更新、数据库重建或根runs/用户8000服务操作。
+- 限制：刷新清空本地草稿/未发送文件；历史恢复沿用现有单页窗口与最近分析，没有全历史分页/跨聊天文件汇总。预览8MiB、CSV100行/50列，未支持格式提供下载；HTML的外部资源受限，完整版本可下载。单矩阵识别、自动metadata、通用聊天附件后端和新统计均留待后续独立编号。
+- 45–47工程自查已记录，父会话尚需独立验收和整体复盘；47提交后停止，不自动实施48。renv原SHA256 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`，仅作保留，不格式化/暂存。
 
 ## Task45 文献分块与证据选择（2026-10-21，2026-10-22恢复收尾）
 

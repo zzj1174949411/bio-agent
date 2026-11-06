@@ -18,7 +18,7 @@ function file(name: string, size = 100) { const value = new File(["%PDF-fixture"
 test("explains per-file limits, skips oversize files, accepts 12 MiB and rejects 101 selections", async () => {
   const { api, upload } = setup();
   render(<KnowledgeManager api={api} onChanged={() => {}} onClose={() => {}} />);
-  await screen.findByLabelText("本地 PDF");
+  await screen.findByLabelText("本地 PDF"); await waitFor(() => expect(screen.getByLabelText("管理知识库")).toHaveValue("base"));
   choose([file("oversize.pdf", limits.max_pdf_bytes + 10486)]);
   expect(screen.getByRole("button", { name: "上传并解析" })).toBeDisabled();
   choose([file("oversize.pdf", limits.max_pdf_bytes + 10486), file("valid.pdf", 12 * 1024 ** 2)]);
@@ -39,7 +39,7 @@ test("uploads 100 files serially, continues after failure and retries only the f
   const { api, upload } = setup();
   upload.mockRejectedValueOnce(new Error("fixture failure"));
   render(<KnowledgeManager api={api} onChanged={() => {}} onClose={() => {}} />);
-  await screen.findByLabelText("本地 PDF");
+  await screen.findByLabelText("本地 PDF"); await waitFor(() => expect(screen.getByLabelText("管理知识库")).toHaveValue("base"));
   choose(Array.from({ length: 100 }, (_, index) => file(`paper-${index}.pdf`)));
   fireEvent.click(screen.getByRole("button", { name: "上传并解析" }));
   await waitFor(() => expect(upload).toHaveBeenCalledTimes(100));
@@ -56,7 +56,7 @@ test("parser readiness survives retrieval failure and explains pending parser st
   let ready!: (value: { ready: boolean; code: string }) => void;
   vi.mocked(api.knowledgeReadiness).mockImplementation((retrieval) => retrieval ? Promise.reject(new Error("offline")) : new Promise((resolve) => { ready = resolve; }));
   render(<KnowledgeManager api={api} onChanged={() => {}} onClose={() => {}} />);
-  await screen.findByLabelText("本地 PDF");
+  await screen.findByLabelText("本地 PDF"); await waitFor(() => expect(screen.getByLabelText("管理知识库")).toHaveValue("base"));
   expect(screen.getByText(/正在检查本地解析状态/)).toBeVisible();
   ready({ ready: true, code: "OK" });
   await waitFor(() => expect(screen.getByLabelText("本地 PDF")).toBeEnabled());
@@ -70,7 +70,7 @@ test("stop and unmount prevent pending uploads while keeping the target library 
   upload.mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve({ items: [] }); }));
   const onChanged = vi.fn();
   const { unmount } = render(<KnowledgeManager api={api} onChanged={onChanged} onClose={() => {}} />);
-  await screen.findByLabelText("本地 PDF"); choose([file("one.pdf"), file("two.pdf"), file("three.pdf")]);
+  await screen.findByLabelText("本地 PDF"); await waitFor(() => expect(screen.getByLabelText("管理知识库")).toHaveValue("base")); choose([file("one.pdf"), file("two.pdf"), file("three.pdf")]);
   fireEvent.click(screen.getByRole("button", { name: "上传并解析" }));
   await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
   expect(screen.getByLabelText("管理知识库")).toBeDisabled();

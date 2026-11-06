@@ -3,6 +3,13 @@ import { ApiClient } from "./client";
 
 describe("ApiClient", () => {
   afterEach(() => vi.restoreAllMocks());
+  it("rejects arbitrary preview URLs and enforces the streamed preview byte limit", async () => {
+    const fetcher = vi.spyOn(globalThis, "fetch"); const api = new ApiClient(); const signal = new AbortController().signal;
+    await expect(api.readArtifact("https://evil.example/file", signal)).rejects.toThrow("非受控");
+    expect(fetcher).not.toHaveBeenCalled();
+    fetcher.mockResolvedValue(new Response(new Uint8Array(8 * 1024 * 1024 + 1)));
+    await expect(api.readArtifact("/api/v1/runs/r/artifacts/file", signal)).rejects.toThrow("8 MiB");
+  });
   it("sends the exact clarification revision so stale responses remain rejectable", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({id:"t1",status:"QUEUED",run_id:null,input_revision:4,pending_input:null}), {status:202, headers:{"Content-Type":"application/json"}}));
     await new ApiClient().respondToTurn("t1", "r1", 3, "Control"); const request = fetchMock.mock.calls[0][1] as RequestInit; expect(JSON.parse(String(request.body))).toMatchObject({request_id:"r1", revision:3, action:"clarify", value:"Control"});

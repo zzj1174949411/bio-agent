@@ -333,7 +333,10 @@ class GeoImportService:
                 self._repository._root / ".geo-downloads" / str(import_id)
             )  # controlled private temp
             root.mkdir(parents=True, exist_ok=True)
-            destination = root / f"source{Path(candidate.file_name).suffix}"
+            suffix = Path(candidate.file_name).suffix
+            if suffix.casefold() == ".gz":
+                suffix = Path(Path(candidate.file_name).stem).suffix + suffix
+            destination = root / f"source{suffix}"
             result = self._downloader.download(
                 candidate.url,
                 destination,

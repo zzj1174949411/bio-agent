@@ -30,11 +30,13 @@ class LocalAccessMiddleware:
         allowed_hosts: tuple[str, ...],
         dev_origin: str | None,
         csrf_token: str,
+        matrix_request_bytes: int = 10 * 1024 * 1024 + 64 * 1024,
     ) -> None:
         self._app = app
         self._hosts = allowed_hosts
         self._dev_origin = dev_origin
         self._csrf = csrf_token
+        self._matrix_request_bytes = matrix_request_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -95,6 +97,13 @@ class LocalAccessMiddleware:
             path = scope.get("path", "")
             if path.startswith("/api/v1/knowledge/bases/") and path.endswith("/documents"):
                 body_limit = MAX_REQUEST_BYTES
+            elif (
+                scope.get("method") == "POST"
+                and one(b"content-type").split(";", 1)[0].strip().lower() == "multipart/form-data"
+                and path.startswith("/api/v1/workbench/conversations/")
+                and path.endswith("/matrices")
+            ):
+                body_limit = self._matrix_request_bytes
             elif path == "/api/v1/geo" or path.startswith("/api/v1/geo/"):
                 body_limit = 2 * 1024 * 1024
             else:

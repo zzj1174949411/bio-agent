@@ -608,11 +608,33 @@ def list_artifacts(run_id: str, dependencies: Dependencies) -> dict[str, object]
     return {
         "run_id": run_id,
         "artifacts": [
-            {"artifact_id": _artifact_id(item.relative_path, item.sha256), "sha256": item.sha256}
+            {
+                "artifact_id": _artifact_id(item.relative_path, item.sha256),
+                "sha256": item.sha256,
+                "name": Path(item.relative_path).name,
+                "media_type": _artifact_media_type(item.relative_path),
+            }
             for item in manifest.artifacts
         ]
         + [_manifest_download_record(run_id, dependencies)],
     }
+
+
+def _artifact_media_type(name: str) -> str:
+    # Fixed mapping: Windows registry MIME settings must not change this API contract.
+    return {
+        ".csv": "text/csv",
+        ".tsv": "text/tab-separated-values",
+        ".json": "application/json",
+        ".html": "text/html",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".pdf": "application/pdf",
+        ".txt": "text/plain",
+        ".log": "text/plain",
+        ".md": "text/markdown",
+    }.get(Path(name).suffix.lower(), "application/octet-stream")
 
 
 def _artifact_id(relative_path: str, digest: str) -> str:
@@ -622,7 +644,12 @@ def _artifact_id(relative_path: str, digest: str) -> str:
 def _manifest_download_record(run_id: str, dependencies: DependencyContainer) -> dict[str, str]:
     content = dependencies.artifact_manager.resolve(run_id, "manifest.json").read_bytes()
     digest = sha256(content).hexdigest()
-    return {"artifact_id": _artifact_id("manifest.json", digest), "sha256": digest}
+    return {
+        "artifact_id": _artifact_id("manifest.json", digest),
+        "sha256": digest,
+        "name": "manifest.json",
+        "media_type": "application/json",
+    }
 
 
 def _file_sha256(path: Path) -> str:

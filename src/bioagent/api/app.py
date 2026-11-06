@@ -22,6 +22,7 @@ from bioagent.api.geo_routes import router as geo_router
 from bioagent.api.knowledge_retrieval_routes import router as retrieval_router
 from bioagent.api.knowledge_routes import router as knowledge_router
 from bioagent.api.local_access import LocalAccessMiddleware, is_workbench_path
+from bioagent.api.matrix_routes import router as matrix_router
 from bioagent.api.model_routes import router as model_router
 from bioagent.api.routes import router
 from bioagent.api.wiki_routes import router as wiki_router
@@ -30,6 +31,8 @@ from bioagent.config import Settings
 from bioagent.extensions.policy import ExtensionError
 from bioagent.knowledge.store import KnowledgeError
 from bioagent.models.profiles import ModelError
+from bioagent.services.datasets import DatasetImportError
+from bioagent.services.matrices import MatrixService
 
 
 class RequestSizeLimitMiddleware:
@@ -41,7 +44,13 @@ class RequestSizeLimitMiddleware:
         if (
             scope["type"] == "http"
             and scope.get("method") == "POST"
-            and scope.get("path") == "/api/v1/datasets"
+            and (
+                scope.get("path") == "/api/v1/datasets"
+                or (
+                    str(scope.get("path", "")).startswith("/api/v1/workbench/conversations/")
+                    and str(scope.get("path", "")).endswith("/matrices")
+                )
+            )
         ):
             headers = dict(scope.get("headers", []))
             raw_length = headers.get(b"content-length")
@@ -120,6 +129,9 @@ def create_app(
                 configured_settings,
                 overrides=overrides,
                 stack=stack,
+            )
+            MatrixService(configured_settings.data_dir / "matrices.sqlite").recover(
+                app.state.dependencies.workbench
             )
             await app.state.dependencies.turn_service.start()
             await app.state.dependencies.answer_service.start()
@@ -244,6 +256,10 @@ def create_app(
         code = error.code if error.code in codes else "EXTENSION_UNAVAILABLE"
         return JSONResponse({"detail": {"code": code}}, status_code=codes.get(code, 503))
 
+    @app.exception_handler(DatasetImportError)
+    async def matrix_error(request: Request, error: DatasetImportError) -> JSONResponse:
+        return JSONResponse({"detail": {"code": error.code}}, status_code=error.status_code)
+
     @app.exception_handler(ValueError)
     async def workbench_error(request: Request, error: ValueError) -> JSONResponse:
         protected_error_path = request.url.path == "/api/v1/extensions" or (
@@ -289,10 +305,13 @@ def create_app(
         allowed_hosts=configured_settings.local_allowed_hosts,
         dev_origin=configured_settings.local_dev_origin,
         csrf_token=app.state.csrf_token,
+        matrix_request_bytes=max_request_bytes,
     )
     app.include_router(router)
     app.include_router(model_router)
     app.include_router(workbench_router)
+    app.include_router(matrix_router)
+    app.include_router(matrix_router)
     app.include_router(geo_router)
     app.include_router(extension_router)
     app.include_router(knowledge_router)

@@ -116,6 +116,7 @@ test("model settings keep editing separate, remember conversations, and create a
   await expect(page.getByRole("button", { name: /批准/ })).toBeVisible();
   expect(submitted).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "项目与对话" }).click();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(page.getByLabel("API Base URL")).toBeVisible();
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain("synthetic-fixture-key");

@@ -193,8 +193,10 @@ def _validate_result_table(
             _issue(
                 "NA_PADJ_VALUES",
                 QCStatus.WARN,
-                "DESeq2 independent filtering produced NA adjusted p-values",
+                "DESeq2 results contain NA adjusted p-values; causes were not determined",
                 proportion=padj_proportion,
+                padj_na_count=int(numeric["padj"].isna().sum()),
+                pvalue_na_count=int(numeric["pvalue"].isna().sum()),
             )
         )
     return table

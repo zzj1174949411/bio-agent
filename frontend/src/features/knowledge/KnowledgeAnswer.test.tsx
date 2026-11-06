@@ -3,6 +3,7 @@ import { expect, test, vi } from "vitest";
 import { ApiClient } from "../../api/client";
 import { KnowledgeAnswer } from "./KnowledgeAnswer";
 import { readKnowledgeEvents } from "../../api/knowledge";
+import { FilePreviewProvider } from "../../components/FilePreview";
 
 test("shows actual hybrid routing, fallback, separate context counts and derived Wiki provenance", async () => {
   const api = new ApiClient();
@@ -22,14 +23,18 @@ test("revokes visible answers and previews when evidence becomes stale; source t
   let stale = false;
   vi.spyOn(api, "knowledgeTask").mockImplementation(async () => stale ? ({ status: "FAILED", error_code: "EVIDENCE_STALE", answer: null, citations: [], evidence: [], fixed_scope: [] } as never) : ({ status: "COMPLETED", answer: "Verified answer <script>bad()</script>", citations: [ref], evidence: [{ reference: ref, chunk: { id: "chunk", kind: "text", text: "<img src=x onerror=bad()>", section: ["Results"] } }], fixed_scope: [] } as never));
   vi.spyOn(api, "knowledgeEvents").mockImplementation(async function* () { yield { sequence: 1, kind: "completed", data: {} }; });
-  render(<KnowledgeAnswer api={api} conversationId="chat" turnId="turn" />);
+  vi.spyOn(api, "evidencePreview").mockResolvedValue({ page: 1, warnings: [], element: { text: "original", captions: [], footnotes: [], ocr_text: "", table: null } } as never);
+  render(<FilePreviewProvider api={api} files={[]}><KnowledgeAnswer api={api} conversationId="chat" turnId="turn" /></FilePreviewProvider>);
   await screen.findByText(/Verified answer/);
   expect(document.querySelector("script")).toBeNull();
   expect(document.querySelector("img")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "打开 PDF 第 1 页" }));
+  await screen.findByRole("complementary", { name: "文件预览" });
   stale = true;
   window.dispatchEvent(new Event("focus"));
   await screen.findByText(/证据已失效/);
   await waitFor(() => expect(screen.queryByText(/Verified answer/)).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("complementary", { name: "文件预览" })).toBeNull());
 });
 
 test("knowledge SSE resumes the same turn by sequence and suppresses duplicate segments", async () => {
