@@ -7,6 +7,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from bioagent.knowledge.retrieval_models import SearchResponse
+
 _CREDENTIAL_FIELD_NAMES = frozenset(
     {
         "api_key",
@@ -78,6 +80,12 @@ class KnowledgeRetriever(Protocol):
     def retrieve(self, query: KnowledgeQuery) -> tuple[KnowledgeEvidence, ...]: ...
 
 
+class LocalKnowledgeRetriever(Protocol):
+    """Explicit scoped v2 extension; never coerces local references into HTTPS evidence."""
+
+    def search(self, query: str, base_ids: list[str], top_k: int = 6) -> SearchResponse: ...
+
+
 class KnowledgeRetrievalError(ValueError):
     def __init__(self, code: str) -> None:
         self.code = code
@@ -97,5 +105,6 @@ __all__ = [
     "KnowledgeQuery",
     "KnowledgeRetrievalError",
     "KnowledgeRetriever",
+    "LocalKnowledgeRetriever",
     "NullKnowledgeRetriever",
 ]

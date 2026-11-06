@@ -219,9 +219,7 @@ class WorkbenchStore:
             )
         return chat
 
-    def bind_conversation_owner(
-        self, conversation_id: UUID | str, owner_token_sha256: str
-    ) -> None:
+    def bind_conversation_owner(self, conversation_id: UUID | str, owner_token_sha256: str) -> None:
         if len(owner_token_sha256) != 64:
             raise ValueError("CONVERSATION_OWNER_INVALID")
         with self._transaction() as db:
@@ -316,6 +314,8 @@ class WorkbenchStore:
         dataset_ids: tuple[UUID, ...] = (),
         profile_id: UUID | None = None,
         requested_profile_id: UUID | None = None,
+        knowledge_base_ids: tuple[UUID, ...] = (),
+        knowledge_revisions: tuple[UUID, ...] = (),
     ) -> Turn:
         now = datetime.now(UTC)
         snapshot = (
@@ -328,6 +328,8 @@ class WorkbenchStore:
             model_snapshot=snapshot,
             profile_id=profile_id,
             requested_profile_id=requested_profile_id,
+            knowledge_base_ids=knowledge_base_ids,
+            knowledge_revisions=knowledge_revisions,
             created_at=now,
             updated_at=now,
         )
@@ -338,6 +340,7 @@ class WorkbenchStore:
             role="user",
             content=text,
             dataset_ids=dataset_ids,
+            knowledge_base_ids=knowledge_base_ids,
             created_at=now,
             updated_at=now,
         )
@@ -494,12 +497,15 @@ class WorkbenchStore:
         action_count: int | None = None,
         active_seconds: float | None = None,
         pending_tool_call: dict[str, object] | None | object = _UNSET,
+        knowledge_ask_id: UUID | None = None,
     ) -> Turn:
         """Persist bounded execution counters without emitting a lifecycle event."""
 
         with self._transaction() as db:
             original = self._get(db, "turns", turn_id, Turn, "TURN_NOT_FOUND")
             data = original.model_dump()
+            if knowledge_ask_id is not None:
+                data["knowledge_ask_id"] = knowledge_ask_id
             if action_count is not None:
                 data["action_count"] = action_count
             if active_seconds is not None:
@@ -767,6 +773,7 @@ class WorkbenchStore:
         *,
         partial: bool = False,
         dataset_ids: tuple[UUID, ...] = (),
+        knowledge_ask_id: UUID | None = None,
     ) -> Message:
         now = datetime.now(UTC)
         message = Message(
@@ -777,6 +784,7 @@ class WorkbenchStore:
             content=content,
             partial=partial,
             dataset_ids=dataset_ids,
+            knowledge_ask_id=knowledge_ask_id,
             created_at=now,
             updated_at=now,
         )
@@ -807,6 +815,9 @@ class WorkbenchStore:
                 "role": message.role,
                 "partial": message.partial,
                 "dataset_ids": [str(value) for value in message.dataset_ids],
+                "knowledge_ask_id": str(message.knowledge_ask_id)
+                if message.knowledge_ask_id
+                else None,
             },
         )
 
@@ -862,6 +873,23 @@ class WorkbenchStore:
                 (now.isoformat(), changed.model_dump_json(), str(record.id)),
             )
         return event
+
+    def set_knowledge_selection(
+        self, conversation_id: UUID, base_ids: tuple[UUID, ...]
+    ) -> Conversation:
+        """Additive JSON evolution; records predating knowledge default to an empty selection."""
+        with self._transaction() as db:
+            original = self._get(
+                db, "conversations", conversation_id, Conversation, "CONVERSATION_NOT_FOUND"
+            )
+            updated = Conversation.model_validate(
+                {**original.model_dump(), "selected_knowledge_base_ids": base_ids}
+            )
+            db.execute(
+                "UPDATE conversations SET record=? WHERE id=?",
+                (updated.model_dump_json(), str(conversation_id)),
+            )
+            return updated
 
     def list_events(
         self,

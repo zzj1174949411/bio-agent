@@ -1,6 +1,6 @@
 export type Project = { id: string; title: string; archived: boolean };
-export type Conversation = Project & { project_id: string; selected_profile_id: string | null; geo_source_id?: string | null; geo_search_id?: string | null };
-export type Message = { id: string; role: "user" | "assistant"; content: string; partial: boolean; dataset_ids: string[] };
+export type Conversation = Project & { project_id: string; selected_profile_id: string | null; geo_source_id?: string | null; geo_search_id?: string | null; selected_knowledge_base_ids?: string[] };
+export type Message = { id: string; role: "user" | "assistant"; content: string; partial: boolean; dataset_ids: string[]; turn_id?: string; knowledge_ask_id?: string | null };
 export type Turn = { id: string; status: string; run_id: string | null; error_code?: string | null; input_revision: number; pending_input: { request_id: string; revision: number; question: string } | null; pending_tool_call?: Record<string, unknown> | null };
 export type ModelProfile = { id: string; label: string; provider: string; model: string; base_url: string; credential_configured: boolean; read_only?: boolean; revision?: number; structured_method?: string; thinking?: string };
 export type DatasetOption = { id: string; label: string };

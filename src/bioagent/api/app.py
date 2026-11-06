@@ -19,12 +19,15 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from bioagent.api.dependencies import build_dependencies
 from bioagent.api.extension_routes import router as extension_router
 from bioagent.api.geo_routes import router as geo_router
+from bioagent.api.knowledge_retrieval_routes import router as retrieval_router
+from bioagent.api.knowledge_routes import router as knowledge_router
 from bioagent.api.local_access import LocalAccessMiddleware, is_workbench_path
 from bioagent.api.model_routes import router as model_router
 from bioagent.api.routes import router
 from bioagent.api.workbench_routes import router as workbench_router
 from bioagent.config import Settings
 from bioagent.extensions.policy import ExtensionError
+from bioagent.knowledge.store import KnowledgeError
 from bioagent.models.profiles import ModelError
 
 
@@ -118,16 +121,53 @@ def create_app(
                 stack=stack,
             )
             await app.state.dependencies.turn_service.start()
+            await app.state.dependencies.answer_service.start()
             try:
                 yield
             finally:
                 try:
+                    await app.state.dependencies.answer_service.close()
                     await app.state.dependencies.turn_service.close()
                 finally:
                     await app.state.dependencies.mcp_client.close()
 
     app = FastAPI(title="Bio-Agent API", version="0.1.0", lifespan=lifespan)
     app.state.csrf_token = token_urlsafe(32)
+
+    @app.exception_handler(KnowledgeError)
+    async def knowledge_error(request: Request, error: KnowledgeError) -> JSONResponse:
+        codes = {
+            "BASE_NOT_FOUND": 404,
+            "DOCUMENT_NOT_FOUND": 404,
+            "JOB_NOT_FOUND": 404,
+            "ASSET_NOT_FOUND": 404,
+            "REVISION_NOT_PUBLISHED": 409,
+            "JOB_CONFLICT": 409,
+            "PDF_TOO_LARGE": 413,
+            "PDF_INVALID": 422,
+            "PDF_BATCH_LIMIT": 422,
+            "BASE_NAME_INVALID": 422,
+            "INVALID_ID": 422,
+            "RESOURCE_INTEGRITY_FAILED": 503,
+            "PARSE_OUTPUT_INVALID": 503,
+            "RAG_DEPENDENCY_MISSING": 503,
+            "RAG_DEPENDENCY_VERSION": 503,
+            "RAG_MODELS_MISSING": 503,
+            "RAG_MODELS_INVALID": 503,
+            "RAG_NOT_READY": 503,
+            "INDEX_NOT_FOUND": 404,
+            "INDEX_CONFLICT": 409,
+            "INDEX_MODEL_MISMATCH": 409,
+            "INDEX_OWNER_CONFLICT": 409,
+            "INDEX_INTEGRITY_FAILED": 503,
+            "EVIDENCE_INVALID": 422,
+            "EVIDENCE_STALE": 409,
+            "ASK_NOT_FOUND": 404,
+            "ASK_QUEUE_FULL": 429,
+            "PREVIEW_UNAVAILABLE": 503,
+        }
+        code = error.code if error.code in codes else "KNOWLEDGE_UNAVAILABLE"
+        return JSONResponse({"detail": {"code": code}}, status_code=codes.get(code, 503))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
@@ -194,13 +234,12 @@ def create_app(
         protected_error_path = request.url.path == "/api/v1/extensions" or (
             request.url.path.startswith(("/api/v1/workbench/", "/api/v1/extensions/"))
         )
-        if not (
-            request.url.path.startswith("/api/v1/workbench/")
-            or protected_error_path
-        ):
+        if not (request.url.path.startswith("/api/v1/workbench/") or protected_error_path):
             raise error
         codes = {
             "TURN_BUSY": 409,
+            "KNOWLEDGE_TURN_MISMATCH": 403,
+            "EVIDENCE_ASSET_UNAVAILABLE": 404,
             "REQUEST_ID_CONFLICT": 409,
             "INPUT_RESPONSE_CONFLICT": 409,
             "TURN_QUEUE_FULL": 429,
@@ -241,6 +280,8 @@ def create_app(
     app.include_router(workbench_router)
     app.include_router(geo_router)
     app.include_router(extension_router)
+    app.include_router(knowledge_router)
+    app.include_router(retrieval_router)
 
     @app.api_route(
         "/api",

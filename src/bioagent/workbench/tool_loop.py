@@ -27,6 +27,7 @@ from bioagent.workbench.actions import (
     DatasetSearchAction,
     GeoImportAction,
     GeoLookupAction,
+    KnowledgeAskAction,
     LoadSkillAction,
     McpCallAction,
     PlanAnalysisAction,
@@ -143,9 +144,10 @@ def _bounded_utf8(value: str, limit: int = MAX_SUMMARY_BYTES) -> str:
     encoded = value.encode("utf-8")
     if len(encoded) <= limit:
         return value
-    return encoded[: max(0, limit - len("…[truncated]".encode()))].decode(
-        "utf-8", errors="ignore"
-    ) + "…[truncated]"
+    return (
+        encoded[: max(0, limit - len("…[truncated]".encode()))].decode("utf-8", errors="ignore")
+        + "…[truncated]"
+    )
 
 
 class ToolLoop:
@@ -273,10 +275,7 @@ class ToolLoop:
         context = list(messages)
         loaded_skills: list[SkillSnapshot] = []
         self.loaded_skills = loaded_skills
-        allowed_tools = {
-            descriptor.qualified_name
-            for descriptor in self._available_descriptors()
-        }
+        allowed_tools = {descriptor.qualified_name for descriptor in self._available_descriptors()}
         allowed_skill_ids = {record.id for record in self.skill_store.enabled_directory()}
         pending_approval = dict(approval) if approval is not None else None
         while True:
@@ -316,6 +315,7 @@ class ToolLoop:
                             action,
                             (
                                 PlanAnalysisAction,
+                                KnowledgeAskAction,
                                 DatasetSearchAction,
                                 GeoLookupAction,
                                 GeoImportAction,
@@ -335,8 +335,7 @@ class ToolLoop:
                             )
                             skill_text = (
                                 f"[ENABLED SKILL SNAPSHOT name={snapshot.name!r} "
-                                f"sha256={snapshot.sha256}]\n"
-                                + snapshot.content
+                                f"sha256={snapshot.sha256}]\n" + snapshot.content
                             )
                             synthetic = self._message(conversation_id, turn_id, skill_text)
                             if synthetic is not None:
@@ -365,8 +364,10 @@ class ToolLoop:
                             budget.pause()
                             pending_approval = None
                             return ToolLoopResult(
-                                tuple(outputs), approval=required.approval,
-                                loaded_skills=tuple(loaded_skills), budget=budget,
+                                tuple(outputs),
+                                approval=required.approval,
+                                loaded_skills=tuple(loaded_skills),
+                                budget=budget,
                             )
                         pending_approval = None
                         synthetic = self._message(

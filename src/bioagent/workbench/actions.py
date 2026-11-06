@@ -15,6 +15,13 @@ class AnswerAction(_Action):
     text: str = Field(min_length=1, max_length=16 * 1024)
 
 
+class KnowledgeAskAction(_Action):
+    """The server chooses the frozen scope; the model can only supply a question."""
+
+    kind: Literal["knowledge_ask"]
+    question: str = Field(min_length=1, max_length=4096)
+
+
 class ClarifyAction(_Action):
     kind: Literal["clarify"]
     question: str = Field(min_length=1, max_length=4096)
@@ -69,6 +76,7 @@ class LoadSkillAction(_Action):
 
 AssistantAction = Annotated[
     AnswerAction
+    | KnowledgeAskAction
     | ClarifyAction
     | PlanAnalysisAction
     | GeoLookupAction
@@ -85,6 +93,7 @@ def parse_action(
     value: object,
 ) -> (
     AnswerAction
+    | KnowledgeAskAction
     | ClarifyAction
     | PlanAnalysisAction
     | GeoLookupAction

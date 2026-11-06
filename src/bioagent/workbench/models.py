@@ -25,6 +25,7 @@ EventKind = Literal[
     "turn.completed",
     "turn.failed",
     "turn.cancelled",
+    "knowledge.updated",
 ]
 
 
@@ -55,6 +56,7 @@ class Conversation(Project):
     selected_profile_id: UUID | None = None
     geo_source_id: UUID | None = None
     geo_search_id: UUID | None = None
+    selected_knowledge_base_ids: tuple[UUID, ...] = Field(default=(), max_length=16)
 
 
 class TurnStatus(StrEnum):
@@ -105,6 +107,9 @@ class Turn(TimedRecord):
     action_count: int = Field(default=0, ge=0, le=8)
     active_seconds: float = Field(default=0.0, ge=0.0, le=120.0)
     pending_tool_call: dict[str, JsonValue] | None = None
+    knowledge_base_ids: tuple[UUID, ...] = ()
+    knowledge_revisions: tuple[UUID, ...] = ()
+    knowledge_ask_id: UUID | None = None
 
 
 class Message(TimedRecord):
@@ -115,6 +120,8 @@ class Message(TimedRecord):
     content: str
     dataset_ids: tuple[UUID, ...] = ()
     partial: bool = False
+    knowledge_ask_id: UUID | None = None
+    knowledge_base_ids: tuple[UUID, ...] = ()
 
     @field_validator("content")
     @classmethod

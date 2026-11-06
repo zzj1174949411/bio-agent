@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     checkpoint_db: Path = Path("checkpoints.sqlite")
     workbench_db: Path = Path("data/workbench.sqlite")
+    knowledge_dir: Path | None = None
+    knowledge_models_dir: Path = Path("data/knowledge-models")
+    knowledge_embedding_models_dir: Path = Path("data/embedding-models")
+    knowledge_parse_timeout_seconds: float = Field(default=600, gt=0, allow_inf_nan=False)
+    knowledge_memory_bytes: int = Field(default=4 * 1024**3, gt=0)
     skill_root: Path = Path(".bioagent/skills")
     local_allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
     local_dev_origin: str | None = None

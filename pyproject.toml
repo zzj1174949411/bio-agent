@@ -19,9 +19,23 @@ dependencies = [
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
   "python-multipart>=0.0.20,<1",
+  "psutil==7.1.0",
   "pyyaml>=6,<7",
   "streamlit>=1.48,<2",
   "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+rag = [
+  "docling==2.58.0",
+  "docling-core==2.101.1",
+  "docling-ibm-models==3.15.0",
+  "docling-parse==4.7.3",
+  "torch==2.14.1",
+  "rapidocr==3.10.0",
+  "onnxruntime==1.31.0",
+  "transformers==4.57.6",
+  "qdrant-client==1.15.1",
 ]
 
 [dependency-groups]
@@ -33,6 +47,7 @@ dev = [
   "pytest-cov>=6.2,<7",
   "ruff>=0.12,<1",
   "types-PyYAML>=6,<7",
+  "types-psutil>=7,<8",
 ]
 
 [build-system]

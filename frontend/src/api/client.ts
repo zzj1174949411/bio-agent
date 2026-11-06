@@ -1,5 +1,6 @@
 import type { Conversation, GeoImportState, GeoSearchRequest, GeoSearchState, GeoSelection, GeoSourceState, McpServer, Message, ModelProfile, Project, SkillDetail, SkillRecord, ToolDescriptor, ToolPolicy, Turn } from "./types";
 import { parseEventBlock, type WorkbenchEvent } from "./events";
+import { knowledgeTurnPath, readKnowledgeEvents, type KnowledgeBase, type KnowledgeDocument, type KnowledgeJob, type IndexState, type KnowledgeReady, type KnowledgeTask, type EvidencePreview } from "./knowledge";
 
 type ErrorBody = { detail?: { code?: string } };
 
@@ -30,7 +31,7 @@ export class ApiClient {
   updateProject(id: string, payload: { title?: string; archived?: boolean }): Promise<Project> { return this.request(`/workbench/projects/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
   conversations(projectId: string): Promise<{ items: Conversation[] }> { return this.request(`/workbench/conversations?project_id=${encodeURIComponent(projectId)}`); }
   createConversation(projectId: string, title: string): Promise<Conversation> { return this.request("/workbench/conversations", { method: "POST", body: JSON.stringify({ project_id: projectId, title }) }); }
-  updateConversation(id: string, payload: { title?: string; archived?: boolean; selected_profile_id?: string | null }): Promise<Conversation> { return this.request(`/workbench/conversations/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
+  updateConversation(id: string, payload: { title?: string; archived?: boolean; selected_profile_id?: string | null; selected_knowledge_base_ids?: string[] }): Promise<Conversation> { return this.request(`/workbench/conversations/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
   messages(conversationId: string): Promise<{ items: Message[] }> { return this.request(`/workbench/conversations/${conversationId}/messages`); }
   submitTurn(conversationId: string, text: string, datasetIds: string[] = [], profileId?: string): Promise<Turn> {
     return this.request(`/workbench/conversations/${conversationId}/turns`, { method: "POST", body: JSON.stringify({ client_request_id: crypto.randomUUID(), text, dataset_ids: datasetIds, profile_id: profileId }) });
@@ -107,6 +108,28 @@ export class ApiClient {
   tools(): Promise<{ items: ToolDescriptor[] }> { return this.request("/extensions/tools"); }
   setToolPolicy(name: string, policy: ToolPolicy, expectedCapabilityRevision: string): Promise<ToolDescriptor> { return this.request(`/extensions/tools/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify({ policy, expected_capability_revision: expectedCapabilityRevision }) }); }
   decideToolCall(callId: string, approvalId: string, decision: "approve" | "deny", capabilityRevision: string, argumentsHash: string): Promise<Record<string, unknown>> { return this.request(`/extensions/calls/${encodeURIComponent(callId)}/decision`, { method: "POST", body: JSON.stringify({ approval_id: approvalId, decision, capability_revision: capabilityRevision, arguments_hash: argumentsHash }) }); }
+
+  knowledgeBases(): Promise<{ items: KnowledgeBase[] }> { return this.request("/knowledge/bases"); }
+  createKnowledgeBase(name: string): Promise<KnowledgeBase> { return this.request("/knowledge/bases", { method: "POST", body: JSON.stringify({ name }) }); }
+  renameKnowledgeBase(id: string, name: string): Promise<KnowledgeBase> { return this.request(`/knowledge/bases/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name }) }); }
+  deleteKnowledgeBase(id: string): Promise<void> { return this.request(`/knowledge/bases/${encodeURIComponent(id)}`, { method: "DELETE" }); }
+  knowledgeDocuments(id: string): Promise<{ items: KnowledgeDocument[] }> { return this.request(`/knowledge/bases/${encodeURIComponent(id)}/documents`); }
+  knowledgeReadiness(retrieval = false): Promise<KnowledgeReady> { return this.request(`/knowledge/${retrieval ? "retrieval/" : ""}readiness`); }
+  knowledgeIndex(id: string): Promise<IndexState> { return this.request(`/knowledge/documents/${encodeURIComponent(id)}/index`); }
+  indexKnowledgeDocument(id: string): Promise<KnowledgeJob> { return this.request(`/knowledge/documents/${encodeURIComponent(id)}/index`, { method: "POST" }); }
+  retryKnowledgeDocument(id: string): Promise<KnowledgeJob> { return this.request(`/knowledge/documents/${encodeURIComponent(id)}/retry`, { method: "POST" }); }
+  deleteKnowledgeDocument(id: string): Promise<void> { return this.request(`/knowledge/documents/${encodeURIComponent(id)}`, { method: "DELETE" }); }
+  cancelKnowledgeJob(id: string, index = false): Promise<KnowledgeJob> { return this.request(`/knowledge/${index ? "index-jobs" : "jobs"}/${encodeURIComponent(id)}/cancel`, { method: "POST" }); }
+  async uploadKnowledgeDocuments(id: string, files: File[]): Promise<unknown> {
+    const body = new FormData(); files.forEach((file) => body.append("files", file));
+    const response = await fetch(`${this.base}/knowledge/bases/${encodeURIComponent(id)}/documents`, { method: "POST", body, headers: this.csrf ? { "X-CSRF-Token": this.csrf } : {} });
+    if (!response.ok) { const failure = await response.json() as ErrorBody; throw new ApiError(failure.detail?.code ?? "PDF_UPLOAD_FAILED", response.status); }
+    return response.json();
+  }
+  knowledgeTask(conversation: string, turn: string): Promise<KnowledgeTask> { return this.request(`${knowledgeTurnPath(conversation, turn)}/knowledge`); }
+  knowledgeEvents(conversation: string, turn: string, signal: AbortSignal) { return readKnowledgeEvents(`${this.base}${knowledgeTurnPath(conversation, turn)}/knowledge/events`, signal); }
+  evidencePreview(conversation: string, turn: string, chunk: string): Promise<EvidencePreview> { return this.request(`${knowledgeTurnPath(conversation, turn)}/evidence/${encodeURIComponent(chunk)}`); }
+  evidenceUrl(conversation: string, turn: string, chunk: string, resource: "pdf" | "image" | "page"): string { return `${this.base}${knowledgeTurnPath(conversation, turn)}/evidence/${encodeURIComponent(chunk)}/${resource}`; }
 
   async *events(conversationId: string, signal?: AbortSignal): AsyncGenerator<WorkbenchEvent> {
     let after = 0; let delay = 250;

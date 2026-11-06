@@ -39,6 +39,10 @@ from bioagent.geo.search_repository import (
 from bioagent.geo.search_service import GeoSearchService
 from bioagent.geo.service import GeoImportService
 from bioagent.geo.transport import GeoTransport
+from bioagent.knowledge.answers import AnswerService
+from bioagent.knowledge.retrieval import RetrievalEngine
+from bioagent.knowledge.service import KnowledgeService
+from bioagent.knowledge.store import KnowledgeStore
 from bioagent.llm.factory import create_chat_model
 from bioagent.llm.planner import AnalysisPlanner
 from bioagent.models.adapters import ModelAdapter
@@ -51,6 +55,7 @@ from bioagent.services.datasets import DatasetImportService
 from bioagent.storage.checkpoint import sqlite_checkpoint
 from bioagent.storage.runs import RunRepository
 from bioagent.tools.registry import ToolRegistry
+from bioagent.workbench.knowledge import WorkbenchKnowledge
 from bioagent.workbench.models import EventKind, TurnStatus
 from bioagent.workbench.store import WorkbenchStore
 from bioagent.workbench.tool_loop import ToolLoop
@@ -129,6 +134,9 @@ class DependencyContainer:
     geo_service: GeoImportService
     geo_search_service: GeoSearchService
     knowledge_retriever: KnowledgeRetriever
+    knowledge_service: KnowledgeService
+    retrieval_engine: RetrievalEngine
+    answer_service: AnswerService
     analysis_service: AnalysisService = field(init=False)
     jobs_by_run: dict[str, str] = field(default_factory=dict)
     jobs_lock: RLock = field(default_factory=RLock)
@@ -150,6 +158,8 @@ class DependencyContainer:
         return str(conversation.id), str(turn.id)
 
     def shutdown(self) -> None:
+        self.retrieval_engine.close()
+        self.knowledge_service.close()
         self.geo_search_service.close()
         self.geo_service.close()
         self.job_runner.close()
@@ -194,7 +204,9 @@ def build_dependencies(
         supplied.get("mcp_client")
         or McpClientAdapter(secret_resolver=_mcp_secret_resolver(secrets)),
     )
-    model_adapter = ModelAdapter(model_profiles)
+    model_adapter = cast(
+        ModelAdapter, supplied.get("model_adapter") or ModelAdapter(model_profiles)
+    )
     workbench = stack.enter_context(WorkbenchStore(settings.workbench_db))
     gateway = ToolGateway(extension_store, mcp_client, workbench)
     factory = cast(
@@ -396,6 +408,9 @@ def build_dependencies(
     if readiness_value is None:
         readiness = default_readiness
 
+    knowledge_store = KnowledgeStore(settings.knowledge_dir or settings.data_dir / "knowledge")
+    retrieval_engine = RetrievalEngine(knowledge_store, settings.knowledge_embedding_models_dir)
+    answer_service = AnswerService(retrieval_engine, model_profiles, model_adapter)
     container = DependencyContainer(
         settings=settings,
         dataset_repository=dataset_repository,
@@ -424,16 +439,27 @@ def build_dependencies(
         geo_service=geo_service,
         geo_search_service=geo_search_service,
         knowledge_retriever=knowledge_retriever,
+        knowledge_service=KnowledgeService(
+            knowledge_store,
+            settings.knowledge_models_dir,
+            timeout_seconds=settings.knowledge_parse_timeout_seconds,
+            memory_bytes=settings.knowledge_memory_bytes,
+        ),
+        retrieval_engine=retrieval_engine,
+        answer_service=answer_service,
     )
     analysis_service = AnalysisService(container)
     container.analysis_service = analysis_service
     turn_service.bind_analysis(analysis_service)
+    turn_service.bind_knowledge(WorkbenchKnowledge(workbench, answer_service))
     turn_service.bind_geo(geo_service)
     turn_service.bind_geo_search(geo_search_service)
     geo_service.bind_event_sink(_workbench_geo_event_sink(workbench))
     geo_search_service.bind_event_sink(_workbench_geo_event_sink(workbench))
     geo_service.bind_ready_sink(turn_service.resume_geo_ready)
     stack.callback(container.shutdown)
+    container.retrieval_engine.start()
+    container.knowledge_service.start()
     return container
 
 

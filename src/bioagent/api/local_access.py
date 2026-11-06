@@ -15,6 +15,7 @@ def is_workbench_path(path: str) -> bool:
             "/api/v1/workbench",
             "/api/v1/geo",
             "/api/v1/extensions",
+            "/api/v1/knowledge",
         )
     )
 
@@ -90,11 +91,12 @@ class LocalAccessMiddleware:
             # Bound the actual body, including chunked requests. Never log it.
             body = bytearray()
             path = scope.get("path", "")
-            body_limit = (
-                2 * 1024 * 1024
-                if path == "/api/v1/geo" or path.startswith("/api/v1/geo/")
-                else 32 * 1024
-            )
+            if path.startswith("/api/v1/knowledge/bases/") and path.endswith("/documents"):
+                body_limit = 41 * 1024 * 1024
+            elif path == "/api/v1/geo" or path.startswith("/api/v1/geo/"):
+                body_limit = 2 * 1024 * 1024
+            else:
+                body_limit = 32 * 1024
             while True:
                 message = await receive()
                 if message["type"] == "http.disconnect":

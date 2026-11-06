@@ -6,15 +6,38 @@
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task 16–37 已实现并通过本次验证。Task 37 规划文档提交为 `dbf7877`，实现提交见当前 Git HEAD；任务限定为模型设置入口和统一当轮调用，不新增统计范围。真实模型 API/真实 GEO 公网验收和 Task 15 发布收尾独立保留。
+**当前阶段：** Task 16–40 已实现并通过本地门禁。Task 38 `955a6f0`、Task 39 `7fc0c02` 已通过父会话独立验收。Task 40 工作台知识库管理、聊天检索和可信证据预览已通过定向测试及真实本地 UI 验收，交父会话独立验收并做 38–40 整体复盘，暂停后续编号任务。真实模型 API/真实 GEO 公网验收和 Task 15 发布收尾独立保留。
 
 ## 恢复工作时先做什么
 
 1. 进入 `.worktrees/bio-agent-mvp`。
 2. 阅读根目录 `AGENTS.md`、已批准设计、实施计划和本文件。
 3. 运行 `git status --short --branch` 和 `git log -5 --oneline`。
-4. 当前仅执行 Task 37，规格与实施计划为 `2026-10-12-model-settings-design.md` 和 `2026-10-12-model-settings.md`；提交后停止，不自动领取下一任务。Task 34/35 的旧复选框与工作台指南已按提交证据同步。
+4. 不领取新编号任务。父会话阅读 `docs/superpowers/plans/2026-10-12-literature-workbench.md`、`docs/knowledge-workbench.md` 和本文件，独立验收 Task 40 并完成 38–40 整体复盘。单编号任务 40 已实现，不能重复实现或把复盘自动扩展为任务 41；图片仍仅图注/OCR，`visual_semantics=not_performed`。
 5. 自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过；保留 Task 15 的历史发布记录。
+
+## Task 40 交接（2026-10-12）
+
+- 实施计划 `docs/superpowers/plans/2026-10-12-literature-workbench.md`；使用、准备、失效规则与真实 UI 重跑命令见 `docs/knowledge-workbench.md`。仅任务 40，不 push/merge/PR，根 runs 未改动。
+- 工作台接入库管理、批量 PDF、解析/索引独立 readiness 与阶段、取消/重试/重建/删除；按对话保存库选择，切换/刷新恢复，安装文档可直接打开。缺可选依赖不阻塞既有聊天/分析。
+- 强类型 `knowledge_ask(question)` 不允许模型选库；提交时保存服务端 READY 索引集合及模型快照，复用当轮临时客户端。新增文献不扩展本轮范围；排队/生成/历史读取时原版本失效稳定拒绝。工作台只保存 ask 引用和操作状态，不复制已验证答案或未经验证知识前言，撤销后 SSE 不重放旧答案。
+- 新读取路由核对 owner、conversation/turn/ask 和实际引用，重验磁盘哈希。静态 PDF 页固定无网络子进程渲染，有时间/内存/输出限制，避免浏览器 PDF 插件被 sandbox 阻止；原 PDF 作附件下载。表格结构/图注/脚注及图片裁剪有受控预览。页面转义内容、忽略模型链接，每两秒及聚焦时撤销失效答案/打开预览。
+- 定向后端 **140 passed (109.79s)**，随后仅增加旧 JSON 默认字段兼容测试，最终任务定向 **7 passed (9.27s)**；前端 **35 passed / 17 files (8.54s)**。全部浏览器 **6 passed (1.2m)**，其中真实 Docling/E5/Qdrant 与 Mock 问答流程约 1.1m，五项既有 fixture 回归覆盖模型、GEO/确认/审批及扩展。typecheck/build、Ruff、mypy **102 source files**、八项 pre-commit、暂存 diff 检查通过，详细命令与真实结果见计划。
+- 真实 UI 记录与实际查看的截图：ignored `data/task40/ui-acceptance/`。三份短合成 PDF 解析/索引 READY、检索六条命中、生成与验证事件、分段答案、PDF 页像素/表格/真实 picture 裁剪、选择切换/刷新、重建/删除撤销三轮答案、旧 PDF 409 与失效 SSE 不重放、窄屏通过。模型与凭据为内存 Mock；未读取真实 Key，未做真实供应商问答验收。
+- 38–40 自查依据：解析→独立 READY→固定范围/模型→可信答案→核验预览→撤销在实际 UI 连通，统计执行仍在原人工审批边界。旧 JSON 新字段提供默认值，无破坏性迁移。剩余限制为短合成英文语料、OCR/双栏/跨页表格缺陷、图像检索措辞敏感、无视觉推理、无真实问答语义质量验收；引用归属不等于语义正确。父会话仍需独立验收和整体复盘。
+- 已保留 `renv/activate.R` 用户改动，SHA256 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`。Git/Ruff 的 `.pytest-reg-final30/` 访问警告是既有 ACL，检查退出 0。提交门禁完成后只应剩该用户修改。
+
+## Task 39 交接（2026-10-12）
+
+- 父会话独立验收（`7fc0c02`）：审阅索引比较发布、重启/删除清理、问答指定 profile 快照、引用归属/存活核验及答案重放撤销。运行 `uv run --extra rag --offline pytest tests/unit/knowledge/test_retrieval.py tests/integration/api/test_knowledge_retrieval.py -q -p no:cacheprovider` 为 **22 passed in 15.70s**；`git show 7fc0c02 --check` 退出 0。独立真实脚本输出至 ignored `data/task39/parent-acceptance-20261012/`，退出 0：三份 PDF 解析/建索引 **44.453s**，中文正文/表格 rank 1、图片 rank 4；重启结果一致，重建/删除撤销旧证据，Mock 问答一次且 SSE 验证通过。应用末尾 RSS 943,230,976 bytes，不是峰值。用户 renv 哈希未变；未发现阻止进入任务 40 的问题。问答仍仅 Mock，不能把引用合法视为语义正确或宣称已完成真实供应商联调。
+- 实施计划及完成记录：`docs/superpowers/plans/2026-10-12-literature-retrieval-api.md`；API、准备命令和调用示例：`docs/knowledge-retrieval.md`。
+- 已固定 multilingual-e5-small revision/384 维/MIT/五个文件哈希与 optional 依赖；模型仅显式下载，运行时纯本地。分块保留原文、位置、完整表头/单位/脚注及有界相邻上下文；BM25 + dense RRF 仅检索指定库的当前 READY revision。
+- SQLite 事务发布独立索引；构建失败保留旧版本，取消/删除/parse 变更拒绝发布。进程 lease 在恢复前获取；Qdrant 反序列化前检查物理存储哈希，重启清理残留 collection。READY 继续支持 parsed/assets API。独立 LocalEvidence v2 不改变旧 HTTPS/Null 检索契约。
+- ask 提交时冻结指定配置，有限文本与系统规则分离；无证据不调用模型，引用必须属于实际检索集合且仍存活。答案通过完整引用验证后才分段 SSE；重建/删除使旧答案及重放失效。取消、超时和重启保留稳定终态。测试只用 Mock/内存凭据，不读取真实 Key。
+- 红灯已覆盖缺失实现、真实 Qdrant 非平凡向量持久化、长表表头/上下文边界、模型伪造文件 URL、重启残留 collection；随后修复并通过。最终定向回归 **80 passed (18.73 s)**，完整 API **89 passed (173.22 s)**；Ruff 通过，mypy **100 source files** 通过。pre-commit、暂存 diff 和提交后状态见实施计划执行记录。
+- 真实 API 验收：`uv run --extra rag --offline python scripts/verify_literature_retrieval.py --output data/task39/acceptance-final3` 成功。三份自制 PDF 真实 Docling→E5→Qdrant；中文正文/表格目标 rank 1，图片 rank 4（独立 caption rank 1）；重启所有命中一致，跨库隔离、重建/删除失效、Mock 问答与 SSE 通过。数据/模型/索引均 ignored，未提交。
+- 限制：仅三份短合成英文 PDF，图像命中对措辞敏感；跨页表格、双栏顺序和 OCR 继承 Task 38 限制。没有视觉推理、通用语义阈值或真实供应商问答质量验收。RSS 约 899 MiB 是验收末尾采样，不是峰值。详见实验记录，不把引用合法视为答案语义正确。
+- 保留用户唯一既有改动 `renv/activate.R`，SHA256 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`；不动根 runs，不 push/merge/PR，不启动 Task 40。既有 `.pytest-reg-final30/` ACL 使 Ruff/Git 扫描有访问警告，相关检查退出码为 0。
 
 ## 已完成
 
@@ -619,12 +642,14 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 ## 新会话启动提示词
 
 ```text
-扩展计划任务 28–37 已完成。当前没有已授权的下一编号任务。进入既有 .worktrees/bio-agent-mvp，确认
+扩展计划任务 28–38 已完成。下一编号任务为 Task 39，由父会话验收后安排。进入既有 .worktrees/bio-agent-mvp，确认
 agent/bio-agent-mvp 分支，按 AGENTS.md 读取设计/计划/进度及 Git 状态。
 随后读取 2026-09-08-extensions-design.md 和 2026-09-08-extensions.md。
-任务 28–33 已完成本地 Skill、MCP stdio/Streamable HTTP 客户端、工具 policy/schema/一次性批准、
-对话工具循环、扩展设置与调用确认卡、端到端恢复和使用文档；真实模型 API/账户联调由用户后续明确配置。
-GEO 搜索 Task 34–36 已实现受控检索、Agent/UI 衔接、选择 provenance 与 RAG 空接口；自动模型和 GEO 测试继续用 Mock，不读取真实 Key。任务 37 规格和计划为 2026-10-12-model-settings-design.md / 2026-10-12-model-settings.md；已实现并验证，完成后停止。
+Task 38 规格和计划为 2026-10-12-literature-rag-design.md / 2026-10-12-literature-ingestion.md。
+同时读取 docs/knowledge-ingestion.md 和 docs/research/2026-10-12-docling-experiment.md。
+Task 38 已实现知识库/PDF/job/revision、离线 Docling 及受控资源 API，状态止于 PARSED。
+只实施 Task 39 检索/API；先制定计划和失败测试，不实现 Task 40 前端集成。
+自动模型和 GEO 测试继续用 Mock，不读取真实 Key。真实模型 API/账户联调由用户后续明确配置。
 保持明确人工审批和原统计执行边界；不要回改已完成的任务 28–33。
 如需继续，先获得用户明确授权再做真实 API/账户联调；保留旧 PR Draft，不推送、不合并、不新建 worktree。
 ```
@@ -640,3 +665,19 @@ GEO 搜索 Task 34–36 已实现受控检索、Agent/UI 衔接、选择 provena
 
 - Task37 收尾：规划文档已单独提交 `dbf7877`；实现与使用文档另作任务 37 提交。最终没有新增包、数据库重建或迁移、真实 Key/账户调用、push、merge 或 PR。`/ready` 对没有环境 Key 的旧默认模型仍返回 503，而页面配置的三种 Mock 协议可以完成聊天、上传/GEO 规划及审批；系统凭据库与真实 provider 能力仍需用户自行联调。
 - 保留 `renv/activate.R` 原有未提交改动，收尾核对 SHA-256 为 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`。提交后 Git 实际状态保留 `M renv/activate.R`；收尾时另出现未跟踪 `docs/research/` 与 `docs/superpowers/specs/2026-10-12-literature-rag-design.md`，属于任务外改动，未读取、修改或暂存。没有下一编号任务授权，停止开发。
+- 父会话独立验收（实现提交 `4af770f`）：审阅设置选择/聊天选择分离、ModelAdapter 与 PreparedChat 的 Planner 绑定、上传/GEO snapshot、审批恢复和旧 API/readiness 路径；重跑 `uv run --offline pytest tests/integration/api/test_workbench_analysis.py -q -p no:cacheprovider` 为 **9 passed in 39.16s**，`git show 4af770f --check` 退出 0。默认沙盒首次无法访问 uv 解释器，改用已审批执行后成功；未访问真实模型或读取真实 Key。没有发现阻止进入 RAG 设计阶段的问题。上条“没有下一编号任务授权”描述 Task 37 子会话限定范围；父会话已获用户授权准备后续 RAG，具体设计审批状态以本文件顶部为准。
+
+## Task 38 本地文献导入与结构化解析
+
+- 会话使用既有 `.worktrees/bio-agent-mvp` / `agent/bio-agent-mvp`，起点 `31a8307`。按已批准 RAG 规格编写单任务实施计划；子代理仅做兼容性实验和独立规格/质量审查，没有多 Agent 产品编排。保留用户 `renv/activate.R` 改动，根目录 main 的 runs 未操作，不 push/merge/PR，也不创建下一聊天。
+- 新增 SQLite 库/document/job/revision、同库 SHA256 去重、异库隔离、新 revision 重试和先撤销可见性的删除。完整性校验与发布条件在同一事务内，取消/删除/迟到结果不能重新发布；只发布 PARSED，index_revision 始终为空。原文、Docling 原始 JSON、归一化元素、模型/设置快照及 PNG 全部保存哈希；资源 API 每次核验所属关系和哈希。
+- 默认安装不引入 Docling。可选 rag extra 固定实测 Docling 2.58.0、core 2.101.1、ibm-models 3.15.0、parse 4.7.3、torch 2.14.1、RapidOCR 3.10.0、onnxruntime 1.31.0；基础新增 psutil 7.1.0。显式 prepare 固定 11 个公开模型文件来源、长度和 SHA256，共 **400,650,044 bytes**，运行时无下载且逐文件核验。实际官方配置下载及完整 bundle 复用校验成功，readiness=true；模型权重仅在 ignored data。
+- 单 supervisor 串行执行固定离线 Python worker，不继承模型 Key，不执行文档代码；关闭 remote services/plugins/视觉增强并拒绝 socket 连接。最多 4×10 MiB PDF/批、200 页、600 秒、4 GiB 进程树 RSS、100 MiB 输出；超限/取消杀进程树。重启持久化 INGESTION_INTERRUPTED 并清理失败/取消未发布目录，Windows 文件占用时下次启动重试；删除目录在 worker 退出及启动恢复再次清理。保留原文和 job 审计记录。
+- knowledge API 沿用 Host/Origin/CSRF，提供库 CRUD、多文件上传、任务/文献状态、重试/取消/删除、原文/结构/PNG；请求不接受服务器路径。response/readiness/error 均有 OpenAPI 模型。原 HTTPS KnowledgeEvidence 不变，本地独立 local-reference.v1 为后续索引保留 base/document/revision/element/page/hash。
+- TDD 首次因 knowledge/service 模块不存在失败；审查发现的 Windows 原文占用、重启目录残留均补失败测试后修复。规格复审通过，质量复审无 P0/P1/P2；唯一 P3 已修复，独立 store 回归 **6 passed in 0.41s**。
+- 最终命令 `uv run --offline pytest tests/unit/knowledge tests/unit/retrieval tests/unit/domain/test_runs.py tests/integration/api/test_knowledge.py -q -p no:cacheprovider`：**39 passed in 7.37s**。完整 API 目录单独运行 `uv run --extra rag --offline pytest tests/integration/api -q -p no:cacheprovider`：**87 passed in 152.10s**。全仓 Ruff 通过（旧 pytest 目录 ACL warning），mypy **90 source files** 通过；wheel 构建及 model_catalog.json 包含检查通过。最终暂存检查结果见下条收尾记录。
+- 真实 CPU API 验收命令 `uv run --extra rag --offline python scripts/verify_literature_ingestion.py --output data/task38/api-acceptance-final`：3 份自制 PDF 共 4 页全部 PARSED/index_revision=null。digital/scan/cross-page 分别 **13.031/12.532/11.922 秒**，peak RSS **1,141,379,072/1,120,493,568/1,164,365,824 bytes**。核验扫描 OCR、表头/单位/脚注、坐标页码、图片 OCR/裁剪/PNG 和删除后资源不可读。所有样本与 acceptance.json 位于 ignored data，未使用用户 PDF、真实 LLM/Key 或真实 GEO。
+- 质量限制与阻塞：无任务 38 阻塞。双栏样本左右行交错，跨页表格保留独立片段，图片 OCR 有空格丢失，图注/脚注可能关联缺失；保留完整原始结构并告警，视觉语义为 not_performed。资源监督为采样限制，非 native-code 操作系统沙盒；仅支持一个后端实例。真实账户调用、生产语料质量和 Task 39 embedding 实验仍未验收。
+- 安装/准备/使用见 `docs/knowledge-ingestion.md`，模型许可证/硬件/样本逐项结果见 `docs/research/2026-10-12-docling-experiment.md`。下一任务为 Task 39 检索/API；必须再核验 parse/source/assets，构建完整独立 index revision，再比较当前 parse/deleted 状态事务发布 READY。
+- 收尾：26 个任务文件明确暂存后，`uv run --offline pre-commit run --all-files` **8 hooks 全通过**，`git diff --cached --check` 退出 0；未暂存 renv、数据、权重、PDF、.env 或运行产物。默认沙盒写 worktree index.lock 被拒后，使用用户已授权的 Git 提交权限完成暂存。用户文件 `renv/activate.R` SHA256 仍为 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`，留作唯一预期未提交改动。
+- 父会话独立验收（2026-10-12，`955a6f0`）：审阅事务发布/取消/删除、受控资源完整性、离线 worker、可选依赖与 API 边界。聚焦集合 `uv run --extra rag --offline pytest tests/unit/knowledge tests/unit/retrieval tests/unit/domain/test_runs.py tests/integration/api/test_knowledge.py -q -p no:cacheprovider` 为 **39 passed in 7.31s**。独立重跑真实 API 脚本，产物在 ignored `data/task38/parent-acceptance-20261012/`：3 份自制 PDF 共 4 页全部 PARSED，digital/scan/cross-page 为 **13.046/12.516/12.312s**，峰值 RSS **1,111,699,456/1,174,261,760/1,174,597,632 bytes**；扫描 OCR、表头单位脚注、图片裁剪及删除失效断言全部通过，退出 0。`git show 955a6f0 --check` 退出 0，用户 renv 哈希未变。接受已明确记录的双栏阅读顺序和跨页表格质量限制，未发现阻止任务 39 的问题；授权进入下一模块，不能宣称完整 RAG 已完成。
