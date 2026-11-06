@@ -148,6 +148,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "scipy" },
     { name = "types-psutil" },
     { name = "types-pyyaml" },
 ]
@@ -192,6 +193,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4,<9" },
     { name = "pytest-cov", specifier = ">=6.2,<7" },
     { name = "ruff", specifier = ">=0.12,<1" },
+    { name = "scipy", specifier = "==1.18.1" },
     { name = "types-psutil", specifier = ">=7,<8" },
     { name = "types-pyyaml", specifier = ">=6,<7" },
 ]
