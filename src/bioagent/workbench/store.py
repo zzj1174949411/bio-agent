@@ -13,6 +13,8 @@ from threading import RLock
 from typing import Literal, Self
 from uuid import UUID, uuid4
 
+from bioagent.knowledge.snapshots import WikiSnapshot
+from bioagent.models.diagnostics import ModelDiagnostic
 from bioagent.workbench.models import (
     Conversation,
     Event,
@@ -316,6 +318,8 @@ class WorkbenchStore:
         requested_profile_id: UUID | None = None,
         knowledge_base_ids: tuple[UUID, ...] = (),
         knowledge_revisions: tuple[UUID, ...] = (),
+        knowledge_mode: Literal["rag", "hybrid"] = "rag",
+        knowledge_wiki_snapshot: tuple[WikiSnapshot, ...] = (),
     ) -> Turn:
         now = datetime.now(UTC)
         snapshot = (
@@ -330,6 +334,8 @@ class WorkbenchStore:
             requested_profile_id=requested_profile_id,
             knowledge_base_ids=knowledge_base_ids,
             knowledge_revisions=knowledge_revisions,
+            knowledge_mode=knowledge_mode,
+            knowledge_wiki_snapshot=knowledge_wiki_snapshot,
             created_at=now,
             updated_at=now,
         )
@@ -673,13 +679,20 @@ class WorkbenchStore:
             self._finish_message(db, turn)
             return self._change_turn(db, turn, TurnStatus.COMPLETED)
 
-    def fail_turn(self, turn_id: UUID, code: str) -> Turn:
+    def fail_turn(
+        self, turn_id: UUID, code: str, *, diagnostic: ModelDiagnostic | None = None
+    ) -> Turn:
         with self._transaction() as db:
             turn = self._get(db, "turns", turn_id, Turn, "TURN_NOT_FOUND")
             if turn.status not in _TRANSITIONS:
                 return turn
             return self._change_turn(
-                db, turn, TurnStatus.FAILED, error_code=code, pending_input=None
+                db,
+                turn,
+                TurnStatus.FAILED,
+                error_code=code,
+                pending_input=None,
+                diagnostic=diagnostic,
             )
 
     def cancel_turn(self, turn_id: UUID) -> Turn:
@@ -875,7 +888,8 @@ class WorkbenchStore:
         return event
 
     def set_knowledge_selection(
-        self, conversation_id: UUID, base_ids: tuple[UUID, ...]
+        self, conversation_id: UUID, base_ids: tuple[UUID, ...],
+        *, mode: Literal["rag", "hybrid"] | None = None,
     ) -> Conversation:
         """Additive JSON evolution; records predating knowledge default to an empty selection."""
         with self._transaction() as db:
@@ -883,7 +897,10 @@ class WorkbenchStore:
                 db, "conversations", conversation_id, Conversation, "CONVERSATION_NOT_FOUND"
             )
             updated = Conversation.model_validate(
-                {**original.model_dump(), "selected_knowledge_base_ids": base_ids}
+                {
+                    **original.model_dump(), "selected_knowledge_base_ids": base_ids,
+                    "knowledge_mode": mode if mode is not None else original.knowledge_mode,
+                }
             )
             db.execute(
                 "UPDATE conversations SET record=? WHERE id=?",

@@ -46,6 +46,8 @@ with pytest.raises(KnowledgeError, match='EVIDENCE_STALE'):
 
 起点 `7b52703`，分支 `agent/bio-agent-mvp`，仅既有 `renv/activate.R` 修改。父会话独立验收后完成任务 38–40 整体复盘。
 
+- 父会话收尾：实现提交 `6d799ce`；独立任务专项 **7 passed (8.73s)**，重新启动真实本地服务并运行浏览器文献用例 **1 passed (1.1m)**。三份 PDF 的 Docling/E5/Qdrant 流程、六条命中、预览、选择恢复、重建/删除撤销及旧资源 409 通过，PDF/图片/窄屏撤销截图实际查看。问答仅 Mock。整体复盘见 `docs/progress/2026-10-12-literature-rag-review.md`；不启动任务 41。
+
 - 初始关键契约 **3 failed**：缺少固定版本、受控动作和桥接；前端证据组件缺失红灯。实现后，额外前言泄漏红灯揭示未经验证文本进入历史，改为有界缓冲并丢弃知识动作前言。新增取消、排队重建、owner 和旧 JSON 兼容回归。
 - 首轮真实 UI 暴露创建库加载竞争、测试服务 override 键写错、删除测试等待缺失；已修复。错误 override 曾导致本地 Ollama 连接失败，未调用公网/真实供应商。PDF iframe 请求成功但 Chrome 实际阻止插件，不能据 HTTP 200 算通过；改为受控静态 PNG，修复现有 pypdfium2 不支持 context manager，最终检查自然宽度并人工查看截图。
 - 最终后端定向命令（workbench/knowledge/retrieval 单元及 workbench/tools/analysis/knowledge/model_profiles API）**140 passed in 109.79s**；之后仅增加旧 JSON 兼容测试，`tests/integration/api/test_workbench_knowledge.py` **7 passed in 9.27s**。前端 **17 files / 35 passed in 8.54s**。`npm run typecheck`、`npm run build` 通过；Ruff 退出 0（既有 ACL 警告），mypy **102 source files** 通过。

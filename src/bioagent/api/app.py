@@ -24,6 +24,7 @@ from bioagent.api.knowledge_routes import router as knowledge_router
 from bioagent.api.local_access import LocalAccessMiddleware, is_workbench_path
 from bioagent.api.model_routes import router as model_router
 from bioagent.api.routes import router
+from bioagent.api.wiki_routes import router as wiki_router
 from bioagent.api.workbench_routes import router as workbench_router
 from bioagent.config import Settings
 from bioagent.extensions.policy import ExtensionError
@@ -122,10 +123,12 @@ def create_app(
             )
             await app.state.dependencies.turn_service.start()
             await app.state.dependencies.answer_service.start()
+            await app.state.dependencies.wiki_service.start()
             try:
                 yield
             finally:
                 try:
+                    await app.state.dependencies.wiki_service.close()
                     await app.state.dependencies.answer_service.close()
                     await app.state.dependencies.turn_service.close()
                 finally:
@@ -164,7 +167,19 @@ def create_app(
             "EVIDENCE_STALE": 409,
             "ASK_NOT_FOUND": 404,
             "ASK_QUEUE_FULL": 429,
+            "EVALUATION_LIMITS_UNSUPPORTED": 422,
+            "EVALUATION_SNAPSHOT_MISMATCH": 409,
+            "EVALUATION_MODEL_MISMATCH": 409,
             "PREVIEW_UNAVAILABLE": 503,
+            "WIKI_PAGE_NOT_FOUND": 404,
+            "WIKI_JOB_NOT_FOUND": 404,
+            "WIKI_PAGE_STALE": 409,
+            "WIKI_BUILD_CONFLICT": 409,
+            "WIKI_PREFLIGHT_CHANGED": 409,
+            "WIKI_NO_EVIDENCE": 409,
+            "WIKI_QUEUE_FULL": 429,
+            "WIKI_CITATION_INVALID": 422,
+            "WIKI_INPUT_LIMIT": 413,
         }
         code = error.code if error.code in codes else "KNOWLEDGE_UNAVAILABLE"
         return JSONResponse({"detail": {"code": code}}, status_code=codes.get(code, 503))
@@ -282,6 +297,7 @@ def create_app(
     app.include_router(extension_router)
     app.include_router(knowledge_router)
     app.include_router(retrieval_router)
+    app.include_router(wiki_router)
 
     @app.api_route(
         "/api",

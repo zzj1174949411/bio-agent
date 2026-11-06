@@ -43,6 +43,7 @@ from bioagent.knowledge.answers import AnswerService
 from bioagent.knowledge.retrieval import RetrievalEngine
 from bioagent.knowledge.service import KnowledgeService
 from bioagent.knowledge.store import KnowledgeStore
+from bioagent.knowledge.wiki import WikiService
 from bioagent.llm.factory import create_chat_model
 from bioagent.llm.planner import AnalysisPlanner
 from bioagent.models.adapters import ModelAdapter
@@ -137,6 +138,7 @@ class DependencyContainer:
     knowledge_service: KnowledgeService
     retrieval_engine: RetrievalEngine
     answer_service: AnswerService
+    wiki_service: WikiService
     analysis_service: AnalysisService = field(init=False)
     jobs_by_run: dict[str, str] = field(default_factory=dict)
     jobs_lock: RLock = field(default_factory=RLock)
@@ -410,7 +412,10 @@ def build_dependencies(
 
     knowledge_store = KnowledgeStore(settings.knowledge_dir or settings.data_dir / "knowledge")
     retrieval_engine = RetrievalEngine(knowledge_store, settings.knowledge_embedding_models_dir)
-    answer_service = AnswerService(retrieval_engine, model_profiles, model_adapter)
+    wiki_service = WikiService(retrieval_engine, model_profiles, model_adapter)
+    answer_service = AnswerService(
+        retrieval_engine, model_profiles, model_adapter, wiki=wiki_service
+    )
     container = DependencyContainer(
         settings=settings,
         dataset_repository=dataset_repository,
@@ -447,6 +452,7 @@ def build_dependencies(
         ),
         retrieval_engine=retrieval_engine,
         answer_service=answer_service,
+        wiki_service=wiki_service,
     )
     analysis_service = AnalysisService(container)
     container.analysis_service = analysis_service

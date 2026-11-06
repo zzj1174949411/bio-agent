@@ -81,6 +81,51 @@ def create(client, headers):
     return response.json()
 
 
+def test_evaluation_ask_obeys_csrf_and_rejects_unbounded_provider_before_credentials(client):
+    from pathlib import Path
+    from uuid import uuid4
+
+    from bioagent.models.profiles import ModelSnapshot
+
+    headers = bootstrap(client)
+    profile = create(client, headers)
+    data = json.loads(Path("evals/literature/example.json").read_text(encoding="utf-8"))
+    controls = {
+        "sources": data["corpus"],
+        "model_snapshot": {key: profile[key] for key in ModelSnapshot.model_fields},
+        "max_input_tokens": 10000,
+        "max_output_tokens": 1000,
+        "context_max_bytes": 6000,
+    }
+    payload = {
+        "question": "synthetic",
+        "knowledge_base_ids": [str(uuid4())],
+        "model_profile_id": profile["id"],
+        "evaluation": controls,
+    }
+    assert client.post("/api/v1/knowledge/ask", json=payload).status_code == 403
+    assert (
+        client.post(
+            "/api/v1/knowledge/ask",
+            headers={**headers, "Origin": "https://evil.test"},
+            json=payload,
+        ).status_code
+        == 403
+    )
+    # Existing owner/scope check remains earlier than generation: nonexistent library rejects.
+    assert client.post("/api/v1/knowledge/ask", headers=headers, json=payload).status_code == 404
+    base = client.post("/api/v1/knowledge/bases", headers=headers, json={"name": "fixture"}).json()
+    payload["knowledge_base_ids"] = [base["id"]]
+    response = client.post("/api/v1/knowledge/ask", headers=headers, json=payload)
+    assert (
+        response.status_code == 422
+        and response.json()["detail"]["code"] == "EVALUATION_LIMITS_UNSUPPORTED"
+    )
+    assert client.constructor.call_count == 0
+    payload["evaluation"]["max_input_tokens"] = 0
+    assert client.post("/api/v1/knowledge/ask", headers=headers, json=payload).status_code == 422
+
+
 def test_profile_crud_credential_redaction_probe_and_no_auto_requests(client, caplog):
     headers = bootstrap(client)
     p = create(client, headers)

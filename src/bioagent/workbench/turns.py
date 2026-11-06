@@ -20,6 +20,7 @@ from bioagent.geo.service import GeoServiceError
 from bioagent.knowledge.store import KnowledgeError
 from bioagent.llm.planner import AnalysisPlanner
 from bioagent.models.adapters import ModelAdapter, error_code, structured_options
+from bioagent.models.diagnostics import diagnose
 from bioagent.models.store import ModelProfileStore
 from bioagent.retrieval.contracts import DatasetSearchQuery
 from bioagent.workbench.actions import (
@@ -562,7 +563,11 @@ class TurnService:
                 turn.conversation_id,
                 turn.id,
                 "run.updated",
-                {"status": "PLANNING_FAILED", "error_code": error_code(error)},
+                {
+                    "status": "PLANNING_FAILED",
+                    "error_code": error_code(error),
+                    "diagnostic": diagnose(error, "preparing").model_dump(mode="json"),
+                },
             )
             return
 
@@ -616,6 +621,11 @@ class TurnService:
                 if self._knowledge and bases
                 else ()
             )
+            wiki_snapshot = (
+                await asyncio.to_thread(self._knowledge.wiki_snapshot, bases)
+                if self._knowledge and bases and conversation.knowledge_mode == "hybrid"
+                else ()
+            )
             if selected is None:
                 raise WorkbenchError("MODEL_NOT_CONFIGURED")
             prepared = await asyncio.to_thread(self._prepare, selected, None)
@@ -630,6 +640,8 @@ class TurnService:
                 requested_profile_id=profile_id,
                 knowledge_base_ids=bases,
                 knowledge_revisions=revisions,
+                knowledge_mode=conversation.knowledge_mode,
+                knowledge_wiki_snapshot=wiki_snapshot,
             )
             self._pending.append(_Job(turn.id, prepared))
             self._wake.set()
@@ -899,7 +911,7 @@ class TurnService:
                     if isinstance(error, (WorkbenchError, KnowledgeError))
                     else error_code(error)
                 )
-                self.store.fail_turn(job.turn_id, code)
+                self.store.fail_turn(job.turn_id, code, diagnostic=diagnose(error, "chat"))
 
     async def _run_knowledge(
         self, turn: Turn, action: KnowledgeAskAction, prepared: PreparedChat

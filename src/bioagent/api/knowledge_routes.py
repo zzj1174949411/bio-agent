@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import FileResponse, Response
 
 from bioagent.api.dependencies import DependencyContainer, get_dependencies
+from bioagent.knowledge.limits import MAX_FILES_PER_REQUEST, MAX_PDF_BYTES, UploadLimits
 from bioagent.knowledge.models import (
     BasePage,
     BaseRecord,
@@ -19,7 +20,7 @@ from bioagent.knowledge.models import (
     ParsedResponse,
     ReadinessRecord,
 )
-from bioagent.knowledge.store import MAX_PDF_BYTES, KnowledgeError
+from bioagent.knowledge.store import KnowledgeError
 
 router = APIRouter(
     prefix="/api/v1/knowledge",
@@ -43,6 +44,11 @@ Deps = Annotated[DependencyContainer, Depends(get_dependencies)]
 class BaseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=200)
+
+
+@router.get("/limits", response_model=UploadLimits)
+def upload_limits() -> UploadLimits:
+    return UploadLimits()
 
 
 @router.get("/readiness", response_model=ReadinessRecord, response_model_exclude_none=True)
@@ -82,7 +88,7 @@ async def upload_documents(
     deps: Deps,
     files: Annotated[list[UploadFile], File()],
 ) -> dict[str, Any]:
-    if not 1 <= len(files) <= 4:
+    if not 1 <= len(files) <= MAX_FILES_PER_REQUEST:
         raise KnowledgeError("PDF_BATCH_LIMIT")
     staged = []
     for file in files:

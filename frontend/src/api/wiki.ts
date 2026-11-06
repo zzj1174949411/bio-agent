@@ -1,0 +1,8 @@
+import type { EvidenceRef } from "./knowledge";
+export type WikiRequest = { model_profile_id: string; max_calls: number; preflight_sha256?: string };
+export type WikiCoverage = { document_id: string; total_chunks: number; included_chunks: number; total_text_bytes: number; included_text_bytes: number; total_pages: number; included_pages: number[]; segments: number; truncated: boolean };
+export type WikiPreflight = { base_name: string; document_count: number; ready_count: number; model_snapshot: { model: string; revision: number }; profile: WikiRequest & { input_max_bytes: number; output_max_bytes: number; output_token_limit: number }; coverage: WikiCoverage[]; synthesis_chunks: number; synthesis_total_chunks: number; required_calls: number; preflight_sha256: string; unchanged: boolean };
+export type WikiPage = { id: string; generation: string; key: string; title: string; kind: "paper" | "concept" | "topic"; status: "CURRENT" | "STALE"; links: string[]; coverage: WikiCoverage[]; statements: { text: string; conditions: string; candidate_disagreement: boolean; citations: { chunk_id: string; quote: string; reference: EvidenceRef }[] }[] };
+export type WikiList = { generation: string | null; items: WikiPage[]; pending_update: boolean; coverage: WikiCoverage[]; document_count: number; covered_document_count: number };
+export type WikiJob = { id: string; status: string; stage: string; calls: number; error_code: string | null; usage_complete: boolean; usage: Record<string, number> | null; synthesis_chunks: number; synthesis_total_chunks: number; request: WikiRequest };
+export const wikiPath = (base: string) => `/knowledge/bases/${encodeURIComponent(base)}/wiki`;

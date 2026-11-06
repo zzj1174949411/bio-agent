@@ -2,6 +2,54 @@ from fastapi.testclient import TestClient
 
 from bioagent.api.app import create_app
 from bioagent.config import Settings
+from bioagent.knowledge.service import KnowledgeService
+
+
+def test_pdf_upload_limits_accept_large_batch_and_reject_oversize(tmp_path, monkeypatch):
+    # Only admission/storage: never launch Docling or inspect user documents.
+    monkeypatch.setattr(KnowledgeService, "start", lambda *args, **kwargs: None)
+    app = create_app(
+        Settings(
+            _env_file=None,
+            deepseek_api_key=None,
+            data_dir=tmp_path / "data",
+            runs_dir=tmp_path / "runs",
+            checkpoint_db=tmp_path / "cp.sqlite",
+            workbench_db=tmp_path / "wb.sqlite",
+            knowledge_dir=tmp_path / "knowledge",
+        )
+    )
+    with TestClient(app, base_url="http://localhost") as client:
+        prefix = "/api/v1/knowledge"
+        client.headers["X-CSRF-Token"] = client.get("/api/v1/workbench/bootstrap").json()[
+            "csrf_token"
+        ]
+        base = client.post(prefix + "/bases", json={"name": "limits"}).json()["id"]
+        route = prefix + f"/bases/{base}/documents"
+        pdf = b"%PDF-" + b" " * (11 * 1024**2)
+        response = client.post(
+            route,
+            files=[("files", (f"{i}.pdf", pdf, "application/pdf")) for i in range(4)],
+        )
+        assert response.status_code == 202, response.text  # >41 MiB request / >10 MiB file
+        limits = client.get(prefix + "/limits").json()
+        assert limits == {
+            "max_pdf_bytes": 50 * 1024**2,
+            "max_files_per_request": 4,
+            "max_files_per_selection": 100,
+            "max_request_bytes": 201 * 1024**2,
+        }
+        response = client.post(
+            route,
+            files={"files": ("oversize.pdf", b"%PDF-" + b" " * (50 * 1024**2), "application/pdf")},
+        )
+        assert response.status_code == 413 and response.json()["detail"]["code"] == "PDF_TOO_LARGE"
+        response = client.post(
+            route,
+            files=[("files", (f"{i}.pdf", b"%PDF-fixture", "application/pdf")) for i in range(5)],
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "PDF_BATCH_LIMIT"
 
 
 def test_local_boundary_batch_import_and_optional_readiness(tmp_path):

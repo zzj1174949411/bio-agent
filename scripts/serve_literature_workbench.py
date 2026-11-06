@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import uvicorn
+from literature_wiki_mock import MockWikiAdapter
 
 from bioagent.api.app import create_app
 from bioagent.config import Settings
@@ -34,8 +35,11 @@ class MemorySecrets:
 
 
 class MockModel:
+    def __init__(self, delay=0.15):
+        self.delay = delay
+
     async def ainvoke(self, messages):
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(self.delay)
         evidence = json.loads(messages[-1].content)["evidence"]
         return SimpleNamespace(
             content=json.dumps(
@@ -87,10 +91,17 @@ def main():
             else:
                 yield "Mock 普通聊天：知识库选择不会拦截普通对话。"
 
-        return PreparedChat(snapshot, stream, answer_model=MockModel())
+        return PreparedChat(
+            snapshot, stream, answer_model=MockModel(2 if snapshot.model.endswith("slow") else 0.15)
+        )
 
     app = create_app(
-        settings, overrides={"secret_store": MemorySecrets(), "chat_model_factory": prepare}
+        settings,
+        overrides={
+            "secret_store": MemorySecrets(),
+            "chat_model_factory": prepare,
+            "model_adapter": MockWikiAdapter(),
+        },
     )
     holder["app"] = app
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")

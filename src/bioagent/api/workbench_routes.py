@@ -42,6 +42,7 @@ class UpdateProject(BaseModel):
 class UpdateConversation(UpdateProject):
     selected_profile_id: UUID | None = None
     selected_knowledge_base_ids: tuple[UUID, ...] | None = Field(default=None, max_length=16)
+    knowledge_mode: Literal["rag", "hybrid"] | None = None
 
 
 class SubmitTurn(BaseModel):
@@ -99,7 +100,7 @@ def update_conversation(
 ) -> Conversation:
     if payload.selected_profile_id is not None:
         deps.model_profiles.get(payload.selected_profile_id)
-    if "selected_knowledge_base_ids" in payload.model_fields_set:
+    if "selected_knowledge_base_ids" in payload.model_fields_set or payload.knowledge_mode:
         deps.workbench.bind_conversation_owner(identity, ensure_workbench_owner(request, response))
         for base in payload.selected_knowledge_base_ids or ():
             deps.knowledge_service.store.base(str(base))
@@ -110,9 +111,13 @@ def update_conversation(
         selected_profile_id=payload.selected_profile_id,
         select_profile="selected_profile_id" in payload.model_fields_set,
     )
-    if "selected_knowledge_base_ids" in payload.model_fields_set:
+    if "selected_knowledge_base_ids" in payload.model_fields_set or payload.knowledge_mode:
         return deps.workbench.set_knowledge_selection(
-            identity, payload.selected_knowledge_base_ids or ()
+            identity,
+            payload.selected_knowledge_base_ids or ()
+            if "selected_knowledge_base_ids" in payload.model_fields_set
+            else result.selected_knowledge_base_ids,
+            mode=payload.knowledge_mode,
         )
     return result
 
@@ -169,7 +174,18 @@ def evidence_preview(
     ref = hit.reference
     parsed = deps.knowledge_service.store.parsed(str(ref.document_id), str(ref.parse_revision))
     element = next(item for item in parsed["elements"] if item["id"] == ref.element_id)
-    return {"element": element, "warnings": parsed["warnings"], "page": ref.page}
+    return {
+        "element": element,
+        "warnings": parsed["warnings"],
+        "page": ref.page,
+        "navigation_anchor_only": bool(hit.chunk.sources),
+        "source_spans": [s.model_dump(mode="json") for s in hit.chunk.sources],
+        "elements": [
+            item
+            for item in parsed["elements"]
+            if item["id"] in {s.element_id for s in hit.chunk.sources}
+        ],
+    }
 
 
 @router.get("/conversations/{conversation_id}/turns/{turn_id}/evidence/{chunk_id}/{resource}")

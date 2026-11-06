@@ -7,6 +7,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
+from bioagent.knowledge.snapshots import WikiSnapshot
+from bioagent.models.diagnostics import ModelDiagnostic
+
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 EventKind = Literal[
     "turn.started",
@@ -57,6 +60,7 @@ class Conversation(Project):
     geo_source_id: UUID | None = None
     geo_search_id: UUID | None = None
     selected_knowledge_base_ids: tuple[UUID, ...] = Field(default=(), max_length=16)
+    knowledge_mode: Literal["rag", "hybrid"] = "rag"
 
 
 class TurnStatus(StrEnum):
@@ -99,6 +103,7 @@ class Turn(TimedRecord):
     model_snapshot: TurnModelSnapshot | None = None
     run_id: UUID | None = None
     error_code: str | None = None
+    diagnostic: ModelDiagnostic | None = None
     profile_id: UUID | None = None
     requested_profile_id: UUID | None = None
     cancel_requested: bool = False
@@ -109,6 +114,8 @@ class Turn(TimedRecord):
     pending_tool_call: dict[str, JsonValue] | None = None
     knowledge_base_ids: tuple[UUID, ...] = ()
     knowledge_revisions: tuple[UUID, ...] = ()
+    knowledge_mode: Literal["rag", "hybrid"] = "rag"
+    knowledge_wiki_snapshot: tuple[WikiSnapshot, ...] = ()
     knowledge_ask_id: UUID | None = None
 
 

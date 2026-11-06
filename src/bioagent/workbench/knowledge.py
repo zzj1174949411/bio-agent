@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from bioagent.knowledge.answers import TERMINAL, AnswerService
-from bioagent.knowledge.retrieval_models import AskRequest, AskTask, SearchHit
+from bioagent.knowledge.retrieval_models import AskRequest, AskTask, SearchHit, WikiSnapshot
 from bioagent.knowledge.store import KnowledgeError
 from bioagent.models.profiles import ModelSnapshot
 from bioagent.workbench.actions import KnowledgeAskAction
@@ -20,6 +20,9 @@ class WorkbenchKnowledge:
     def snapshot(self, bases: tuple[UUID, ...]) -> tuple[UUID, ...]:
         return self.answers.engine.snapshot([str(key) for key in bases]) if bases else ()
 
+    def wiki_snapshot(self, bases: tuple[UUID, ...]) -> tuple[WikiSnapshot, ...]:
+        return self.answers.hybrid.snapshot(bases) if bases else ()
+
     def task(self, conversation: UUID, turn_id: UUID) -> AskTask:
         turn = self.store.get_turn(turn_id)
         if turn.conversation_id != conversation or turn.knowledge_ask_id is None:
@@ -28,6 +31,8 @@ class WorkbenchKnowledge:
         if (
             task.fixed_scope != turn.knowledge_base_ids
             or task.fixed_revisions != turn.knowledge_revisions
+            or task.requested_mode != turn.knowledge_mode
+            or task.wiki_snapshot != turn.knowledge_wiki_snapshot
         ):
             raise WorkbenchError("KNOWLEDGE_TURN_MISMATCH")
         return task
@@ -52,8 +57,10 @@ class WorkbenchKnowledge:
                 question=action.question,
                 knowledge_base_ids=turn.knowledge_base_ids,
                 model_profile_id=turn.profile_id,
+                mode=turn.knowledge_mode,
             ),
             fixed=turn.knowledge_revisions,
+            wiki_fixed=turn.knowledge_wiki_snapshot,
             snapshot=ModelSnapshot.model_validate(turn.model_snapshot.model_dump()),
             model=model,
         )

@@ -7,7 +7,55 @@ from uuid import UUID
 from pydantic import Field, field_validator
 
 from bioagent.knowledge.models import Location, Record
+from bioagent.knowledge.snapshots import WikiSnapshot as WikiSnapshot
+from bioagent.models.diagnostics import ModelDiagnostic
 from bioagent.models.profiles import ModelSnapshot
+
+KnowledgeMode = Literal["rag", "wiki", "hybrid"]
+
+
+class WikiNavigation(Record):
+    base_id: UUID
+    generation: UUID
+    page_id: UUID
+    title: str
+    statements: tuple[str, ...]
+    source_chunk_ids: tuple[UUID, ...]
+    ai_generated: Literal[True] = True
+    human_reviewed: Literal[False] = False
+    independent_study: Literal[False] = False
+
+
+class ContextAudit(Record):
+    original_retrieved: int = 0
+    wiki_retrieved: int = 0
+    linked_original_retrieved: int = 0
+    original_sent: int = 0
+    wiki_sent: int = 0
+    original_bytes: int = 0
+    wiki_bytes: int = 0
+    context_bytes: int = 0
+    sent_chunk_ids: tuple[UUID, ...] = ()
+    sent_page_ids: tuple[UUID, ...] = ()
+    original_search_sent: int = 0
+    linked_only_sent: int = 0
+    duplicate_candidates: int = 0
+    selection_version: str = "round-robin-topk-v1"
+
+
+class SourceSpan(Record):
+    """An exact slice of one parsed element field, not a claim about entailment."""
+
+    element_id: str
+    field: Literal["text", "ocr_text", "captions", "footnotes", "table_cells"]
+    field_index: int = Field(default=0, ge=0)
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    text: str = Field(min_length=1)
+    chunk_start: int = Field(ge=0)
+    chunk_end: int = Field(gt=0)
+    locations: tuple[Location, ...] = Field(min_length=1)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class Chunk(Record):
@@ -24,6 +72,12 @@ class Chunk(Record):
     part: int
     content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     visual_semantics: Literal["not_performed"] = "not_performed"
+    # element_id/locations[0] remain a compatible navigation anchor only.
+    # Merged excerpts are attributed to ALL exact source slices below.
+    sources: tuple[SourceSpan, ...] = ()
+    chunking_algorithm: str = "element-char1200-v1"
+    token_count: int | None = None
+    token_overflow: bool = False
 
 
 class LocalEvidence(Record):
@@ -42,6 +96,7 @@ class SearchRequest(Record):
     query: str = Field(min_length=1, max_length=4096)
     knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
     top_k: int = Field(default=6, ge=1, le=20, strict=True)
+    mode: KnowledgeMode = "rag"
 
     @field_validator("query")
     @classmethod
@@ -68,12 +123,18 @@ class RetrievalInfo(Record):
     index_revisions: tuple[UUID, ...]
     scope: tuple[UUID, ...]
     semantic_truth_verified: Literal[False] = False
+    chunking_algorithms: tuple[str, ...] = ()
 
 
 class SearchResponse(Record):
     code: Literal["OK", "NO_EVIDENCE"]
     items: tuple[SearchHit, ...] = ()
     retrieval: RetrievalInfo
+    requested_mode: KnowledgeMode = "rag"
+    actual_mode: KnowledgeMode = "rag"
+    fallback_reason: str | None = None
+    wiki_navigation: tuple[WikiNavigation, ...] = ()
+    audit: ContextAudit | None = None
 
 
 class RetrievalReadiness(Record):
@@ -98,6 +159,7 @@ class IndexJob(Record):
     error_code: str | None = None
     created_at: str
     updated_at: str
+    chunking_algorithm: str = "element-char1200-v1"
 
 
 class IndexState(Record):
@@ -106,10 +168,33 @@ class IndexState(Record):
     latest_job: IndexJob | None
 
 
+class EvaluationSource(Record):
+    base_id: UUID
+    document_id: UUID
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parse_revision: UUID
+    index_revision: UUID
+
+
+class EvaluationControls(Record):
+    sources: tuple[EvaluationSource, ...] = Field(min_length=1, max_length=100)
+    model_snapshot: ModelSnapshot
+    max_input_tokens: int | None = Field(default=None, ge=1, le=200000, strict=True)
+    max_input_bytes: int | None = Field(default=None, ge=1, le=32000, strict=True)
+    max_output_tokens: int = Field(ge=1, le=16000, strict=True)
+    context_max_bytes: int = Field(ge=1, le=100000, strict=True)
+    temperature: Literal[0] = 0
+    seed: Literal[42] = 42
+    prompt_version: Literal["rag-answer.v1"] = "rag-answer.v1"
+    wiki_snapshots: tuple[WikiSnapshot, ...] = ()
+
+
 class AskRequest(Record):
     question: str = Field(min_length=1, max_length=4096)
     knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
     model_profile_id: UUID
+    evaluation: EvaluationControls | None = None
+    mode: KnowledgeMode = "rag"
 
     @field_validator("question")
     @classmethod
@@ -147,6 +232,12 @@ class AskTask(Record):
     answer: str | None = None
     citations: tuple[LocalEvidence, ...] = ()
     error_code: str | None = None
+    diagnostic: ModelDiagnostic | None = None
+    usage: dict[str, int] | None = None
+    input_token_upper_bound: int | None = None
+    input_bytes: int | None = None
+    context_bytes: int | None = None
+    evaluation: EvaluationControls | None = None
     created_at: str
     updated_at: str
     status_url: str
@@ -154,6 +245,13 @@ class AskTask(Record):
     visual_semantics: Literal["not_performed"] = "not_performed"
     fixed_scope: tuple[UUID, ...] = ()
     fixed_revisions: tuple[UUID, ...] | None = None
+    requested_mode: KnowledgeMode = "rag"
+    actual_mode: KnowledgeMode = "rag"
+    fallback_reason: str | None = None
+    wiki_snapshot: tuple[WikiSnapshot, ...] = ()
+    wiki_navigation: tuple[WikiNavigation, ...] = ()
+    audit: ContextAudit | None = None
+    source_epochs: dict[str, int] | None = None
 
 
 class AskEvent(Record):

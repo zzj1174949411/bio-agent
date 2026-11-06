@@ -1,0 +1,34 @@
+{
+  "schema_version": "literature-eval.v1",
+  "dataset_id": "synthetic-contract-example",
+  "kind": "synthetic_example",
+  "corpus": [{
+    "base_id": "00000000-0000-0000-0000-000000000001",
+    "document_id": "00000000-0000-0000-0000-000000000002",
+    "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "parse_revision": "00000000-0000-0000-0000-000000000003",
+    "index_revision": "00000000-0000-0000-0000-000000000004"
+  }],
+  "generation": {"temperature": 0, "seed": 42, "prompt_version": "rag-answer.v1", "context_max_bytes": 24000, "input_tokens_per_question": 32000, "output_tokens_per_question": 2000},
+  "questions": [{
+    "id": "demo_table", "split": "development", "category": "table_numeric",
+    "question": "合成示例表中的 Beta 质量是多少，单位是什么？", "answerable": true,
+    "reference_claims": ["合成示例：Beta 为12.5 mg；此句不是论文专家参考答案。"],
+    "reference_evidence": [{
+      "schema_version": "local-evidence.v2",
+      "base_id": "00000000-0000-0000-0000-000000000001",
+      "document_id": "00000000-0000-0000-0000-000000000002",
+      "parse_revision": "00000000-0000-0000-0000-000000000003",
+      "index_revision": "00000000-0000-0000-0000-000000000004",
+      "chunk_id": "00000000-0000-0000-0000-000000000005",
+      "element_id": "#/tables/0", "page": 1,
+      "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    }],
+    "rubric": "仅演示数值/单位评分字段；正式标注需人工对照已授权原文。"
+  }, {
+    "id": "demo_absent", "split": "heldout", "category": "unanswerable",
+    "question": "合成资料是否报告了十年临床生存率？", "answerable": false,
+    "reference_claims": [], "reference_evidence": [],
+    "rubric": "仅演示库中无答案：应说明证据不足，不补造临床数值。"
+  }]
+}

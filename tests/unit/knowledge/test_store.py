@@ -49,6 +49,15 @@ def store(tmp_path):
     return KnowledgeStore(tmp_path / "knowledge")
 
 
+def test_store_accepts_exactly_50_mib_and_rejects_one_byte_more(store):
+    base = store.create_base("limits")
+    pdf = b"%PDF-" + b" " * (50 * 1024**2 - 5)
+    doc = store.import_pdf(base["id"], "large.pdf", pdf)["document"]
+    assert store.original(doc["id"]).stat().st_size == 50 * 1024**2
+    with pytest.raises(KnowledgeError, match="PDF_TOO_LARGE"):
+        store.import_pdf(base["id"], "oversize.pdf", pdf + b" ")
+
+
 def test_dedup_is_scoped_to_base_and_restart_preserves_revision(store):
     a, b = store.create_base("a"), store.create_base("b")
     one = store.import_pdf(a["id"], "paper.pdf", b"%PDF-1.7 fixture")

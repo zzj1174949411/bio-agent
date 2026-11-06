@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
+from bioagent.knowledge.limits import MAX_PDF_BYTES
 from bioagent.knowledge.models import Asset, Element, Location, ParsedDocument
 from bioagent.knowledge.runtime import PARSER_VERSION, bundle_path, load_bundle
-from bioagent.knowledge.store import MAX_PDF_BYTES, KnowledgeError, file_hash
+from bioagent.knowledge.store import KnowledgeError, file_hash
 
 
 class LiteratureParser(Protocol):

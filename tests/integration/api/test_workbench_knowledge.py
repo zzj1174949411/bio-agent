@@ -35,6 +35,47 @@ def test_knowledge_action_has_no_model_selectable_scope():
     assert parse_action({"kind": "knowledge_ask", "question": "What does the paper say?"})
     with pytest.raises(ValueError):
         parse_action({"kind": "knowledge_ask", "question": "q", "knowledge_base_ids": [uuid4()]})
+    for field in ("mode", "path", "wiki_generation"):
+        with pytest.raises(ValueError):
+            parse_action({"kind": "knowledge_ask", "question": "q", field: "hybrid"})
+
+
+def test_chat_mode_and_wiki_are_frozen_at_submission_and_persisted(tmp_path):
+    from bioagent.knowledge.retrieval_models import WikiSnapshot
+
+    base, revision, generation, page = uuid4(), uuid4(), uuid4(), uuid4()
+    frozen_wiki = (WikiSnapshot(base_id=base, generation=generation, page_ids=(page,)),)
+    snapshot = TurnModelSnapshot(
+        provider="ollama", model="mock", base_url="http://localhost:11434", revision=1,
+        thinking="default", structured_method="function_calling",
+    )
+
+    async def stream(messages):
+        yield "ordinary chat"
+
+    async def scenario():
+        path = tmp_path / "wb.sqlite"
+        with WorkbenchStore(path) as store:
+            chat = store.create_conversation(store.create_project("p").id, "c")
+            assert chat.knowledge_mode == "rag"
+            store.set_knowledge_selection(chat.id, (base,), mode="hybrid")
+            service = TurnService(store, lambda *_: PreparedChat(snapshot, stream))
+            service.bind_knowledge(SimpleNamespace(
+                snapshot=lambda _: (revision,), wiki_snapshot=lambda _: frozen_wiki,
+            ))
+            await service.start()
+            turn = await service.submit(chat.id, uuid4(), "question", uuid4())
+            store.set_knowledge_selection(chat.id, (), mode="rag")
+            assert turn.knowledge_mode == "hybrid"
+            assert turn.knowledge_wiki_snapshot == frozen_wiki
+            assert turn.knowledge_base_ids == (base,)
+            assert turn.knowledge_revisions == (revision,)
+            await service.close()
+        with WorkbenchStore(path) as store:
+            assert store.get_conversation(chat.id).knowledge_mode == "rag"
+            assert store.get_turn(turn.id).knowledge_wiki_snapshot == frozen_wiki
+
+    asyncio.run(scenario())
 
 
 def test_pre_knowledge_json_records_restore_with_empty_defaults(tmp_path):
@@ -81,6 +122,11 @@ def test_chat_knowledge_routes_require_owner_and_validate_selected_library(tmp_p
         selected = client.patch(prefix, json={"selected_knowledge_base_ids": [base["id"]]})
         assert selected.status_code == 200
         assert selected.json()["selected_knowledge_base_ids"] == [base["id"]]
+        changed = client.patch(prefix, json={"knowledge_mode": "hybrid"})
+        assert changed.status_code == 200
+        assert changed.json()["knowledge_mode"] == "hybrid"
+        assert changed.json()["selected_knowledge_base_ids"] == [base["id"]]
+        assert client.patch(prefix, json={"knowledge_mode": "wiki"}).status_code == 422
         invalid = client.patch(prefix, json={"selected_knowledge_base_ids": [str(uuid4())]})
         assert invalid.status_code == 404
         client.cookies.clear()

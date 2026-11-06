@@ -14,7 +14,7 @@ from threading import Event, RLock, Thread
 from typing import Any
 from uuid import UUID
 
-from bioagent.knowledge.chunks import chunks, digest_chunk
+from bioagent.knowledge.chunks import ALGORITHM, LEGACY, chunks, digest_chunk, validate_sources
 from bioagent.knowledge.embedding import IDENTITY, Embedding, LocalE5, readiness
 from bioagent.knowledge.index_catalog import IndexCatalog
 from bioagent.knowledge.models import ParsedDocument
@@ -197,14 +197,16 @@ class RetrievalEngine:
 
     def _build(self, job: IndexJob) -> None:
         self._check_job(job)
+        if job.chunking_algorithm != ALGORITHM:
+            raise KnowledgeError("INDEX_ALGORITHM_REBUILD_REQUIRED")
         parsed = self.store.parsed(str(job.document_id), str(job.parse_revision))
         document = ParsedDocument.model_validate(
             {key: value for key, value in parsed.items() if key in ParsedDocument.model_fields}
         )
-        fragments = chunks(document)
+        embed, vectors = self._runtime()
+        fragments = chunks(document, count_tokens=getattr(embed, "count_tokens", None))
         if not fragments:
             raise KnowledgeError("INDEX_EMPTY")
-        embed, vectors = self._runtime()
         if job.model_identity != embed.identity or job.dimension != embed.dimension:
             raise KnowledgeError("INDEX_MODEL_MISMATCH")
         encoded = []
@@ -232,6 +234,7 @@ class RetrievalEngine:
         )
         manifest = {
             "schema_version": "local-index.v1",
+            "chunking_algorithm": ALGORITHM,
             "job": job.model_dump(mode="json"),
             "provenance": {
                 key: value
@@ -264,10 +267,33 @@ class RetrievalEngine:
             parsed = self.store.parsed(row["document_id"], row["parse_revision"])
             if manifest["provenance"]["parsed_sha256"] != parsed["parsed_sha256"]:
                 raise KnowledgeError("INDEX_INTEGRITY_FAILED")
+            algorithm = manifest.get("chunking_algorithm", LEGACY)
+            if algorithm not in {LEGACY, ALGORITHM}:
+                raise KnowledgeError("INDEX_ALGORITHM_UNSUPPORTED")
+            document = (
+                ParsedDocument.model_validate(
+                    {
+                        key: value
+                        for key, value in parsed.items()
+                        if key in ParsedDocument.model_fields
+                    }
+                )
+                if algorithm != LEGACY
+                else None
+            )
             for data in manifest["chunks"]:
                 chunk = Chunk.model_validate(data)
-                if digest_chunk(chunk) != chunk.content_sha256:
+                if (
+                    digest_chunk(chunk) != chunk.content_sha256
+                    or chunk.chunking_algorithm != algorithm
+                    or (
+                        algorithm == LEGACY
+                        and (chunk.sources or chunk.token_count is not None or chunk.token_overflow)
+                    )
+                ):
                     raise KnowledgeError("INDEX_INTEGRITY_FAILED")
+                if document is not None:
+                    validate_sources(chunk, document)
             storage = self.store._path(
                 "vectors", "collection", "revision_" + row["id"].replace("-", ""), "storage.sqlite"
             )
@@ -331,6 +357,13 @@ class RetrievalEngine:
                 return SearchResponse(code="NO_EVIDENCE", retrieval=information)
             embed, vectors = self._runtime()
             manifests = [(row, self._manifest(row)) for row in rows]
+            information = information.model_copy(
+                update={
+                    "chunking_algorithms": tuple(
+                        dict.fromkeys(m.get("chunking_algorithm", LEGACY) for _, m in manifests)
+                    )
+                }
+            )
             query_vector = embed.encode([request.query], query=True)[0]
             all_chunks = {}
             dense = []

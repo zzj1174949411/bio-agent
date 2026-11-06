@@ -61,7 +61,7 @@ with httpx.Client(base_url="http://127.0.0.1:8000", timeout=60) as client:
     # PNG: GET /documents/{id}/revisions/{revision}/assets/{asset_id}
 ```
 
-同库原始 SHA256 相同返回已有 document 与 `duplicate=true`；不同库独立导入。每批最多 4 个 PDF，每个 10 MiB，总请求 41 MiB；扩展名、MIME、PDF magic 都检查。后台最多 200 PDF 页、600 秒、进程树 4 GiB RSS 和 100 MiB 输出。重复导入不会自动重试失败任务。
+同库原始 SHA256 相同返回已有 document 与 `duplicate=true`；不同库独立导入。HTTP API 每请求最多 4 个 PDF，每个最多 50 MiB，总请求最多 201 MiB（包含 multipart 余量）；扩展名、MIME、PDF magic 都检查。工作台一次可选择 1–100 份，点击一次后自动逐份串行发送，不会构建 100×50 MiB 的请求，也不增加解析并发。后端 `knowledge/limits.py` 为 Store、Docling `max_file_size`、路由与请求中间件的统一来源，工作台通过 `/limits` 读取同一契约。后台仍最多 200 PDF 页、600 秒、进程树 4 GiB RSS 和 100 MiB 输出。50 MiB 是上传准入限制，不保证每份文件可在解析资源限额内完成；文件大小不等于运行内存。重复导入不会自动重试失败任务。
 
 ## API 与错误
 
@@ -70,6 +70,7 @@ with httpx.Client(base_url="http://127.0.0.1:8000", timeout=60) as client:
 | 方法 | 路径 | 响应 |
 | --- | --- | --- |
 | GET | `/readiness` | ready/code/parser_version 或 prepare_command |
+| GET | `/limits` | max_pdf_bytes / max_files_per_request / max_files_per_selection / max_request_bytes |
 | POST/GET | `/bases` | 201 BaseRecord / 200 BasePage |
 | GET/PATCH/DELETE | `/bases/{base_id}` | BaseRecord / BaseRecord / 204 |
 | POST/GET | `/bases/{base_id}/documents` | 202 ImportPage / DocumentPage |

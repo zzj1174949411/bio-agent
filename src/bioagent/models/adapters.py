@@ -9,9 +9,10 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from ollama import ResponseError
-from openai import APIStatusError, APITimeoutError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from bioagent.models.diagnostics import ModelDiagnostic, diagnose
 from bioagent.models.profiles import ModelError, ModelSnapshot
 from bioagent.models.store import ModelProfileStore
 
@@ -38,17 +39,26 @@ class ProbeResult(BaseModel):
     ok: bool
     code: str
     capabilities: tuple[str, ...] = ()
+    diagnostic: ModelDiagnostic | None = None
 
 
 def error_code(error: Exception) -> str:
+    if type(error) is ValueError and error.args in (
+        ("MODEL_ACTION_INVALID",),
+        ("MODEL_OUTPUT_INVALID",),
+        ("TOOL_NOT_AVAILABLE",),
+    ):
+        return str(error.args[0])
     if isinstance(error, ModelError):
         return (
             error.code
             if error.code in {"MODEL_NOT_CONFIGURED", "SECRET_STORE_UNAVAILABLE"}
-            else "MODEL_UNAVAILABLE"
+            else "MODEL_INTERNAL_ERROR"
         )
     if isinstance(error, (TimeoutError, httpx.TimeoutException, APITimeoutError)):
         return "MODEL_TIMEOUT"
+    if isinstance(error, (httpx.NetworkError, APIConnectionError, ConnectionError)):
+        return "MODEL_CONNECTION_FAILED"
     if isinstance(error, ValidationError):
         return "MODEL_OUTPUT_INVALID"
     if isinstance(error, NotImplementedError):
@@ -62,11 +72,13 @@ def error_code(error: Exception) -> str:
         return {
             401: "MODEL_AUTH_FAILED",
             403: "MODEL_AUTH_FAILED",
+            402: "MODEL_PAYMENT_REQUIRED",
+            404: "MODEL_NOT_FOUND",
             429: "MODEL_RATE_LIMITED",
             400: "MODEL_PROTOCOL_UNSUPPORTED",
             422: "MODEL_PROTOCOL_UNSUPPORTED",
-        }.get(status, "MODEL_UNAVAILABLE")
-    return "MODEL_UNAVAILABLE"
+        }.get(status, "MODEL_SERVER_ERROR" if 500 <= status <= 599 else "MODEL_HTTP_ERROR")
+    return "MODEL_INTERNAL_ERROR"
 
 
 class _OpenAIOptions(TypedDict, total=False):
@@ -121,4 +133,6 @@ class ModelAdapter:
                 ProbeOK.model_validate(output)
             return ProbeResult(ok=True, code="OK", capabilities=("structured_output",))
         except Exception as error:
-            return ProbeResult(ok=False, code=error_code(error))
+            return ProbeResult(
+                ok=False, code=error_code(error), diagnostic=diagnose(error, "probe")
+            )

@@ -84,6 +84,10 @@ class LocalE5:
             .eval()
         )
 
+    def count_tokens(self, text: str) -> int:
+        # Measuring a candidate longer than the window performs no model inference.
+        return len(self.tokenizer.encode(text, add_special_tokens=False, verbose=False))
+
     def encode(self, texts: list[str], *, query: bool = False) -> list[list[float]]:
         torch = self.torch
         output = []

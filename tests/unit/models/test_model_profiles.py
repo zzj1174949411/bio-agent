@@ -197,7 +197,9 @@ def test_probe_uses_fixed_schema_and_fresh_credentials(tmp_path, monkeypatch, pr
         (401, "MODEL_AUTH_FAILED"),
         (429, "MODEL_RATE_LIMITED"),
         (400, "MODEL_PROTOCOL_UNSUPPORTED"),
-        (500, "MODEL_UNAVAILABLE"),
+        (500, "MODEL_SERVER_ERROR"),
+        (402, "MODEL_PAYMENT_REQUIRED"),
+        (404, "MODEL_NOT_FOUND"),
     ],
 )
 def test_probe_errors_are_whitelisted_without_fallback(tmp_path, monkeypatch, status, code):
@@ -242,6 +244,41 @@ def test_probe_timeout_and_invalid_output(tmp_path, monkeypatch, output, code):
             label="test", provider="ollama", model="model", base_url="http://localhost:11434"
         )
         assert asyncio.run(ModelAdapter(store).probe(created.id)).code == code
+
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (ValueError("MODEL_ACTION_INVALID"), "MODEL_ACTION_INVALID"),
+        (ValueError("MODEL_ACTION_INVALID synthetic-private"), "MODEL_INTERNAL_ERROR"),
+        (RuntimeError("synthetic-private C:/secret sk-test"), "MODEL_INTERNAL_ERROR"),
+        (httpx.ConnectError("synthetic-private"), "MODEL_CONNECTION_FAILED"),
+    ],
+)
+def test_error_classification_is_exact_and_private(error, expected):
+    from bioagent.models.adapters import error_code
+
+    assert error_code(error) == expected
+
+
+def test_diagnostic_drops_untrusted_request_id_and_exception_names():
+    from bioagent.models.diagnostics import diagnose
+
+    request = httpx.Request("POST", "https://private.invalid")
+    error = httpx.HTTPStatusError(
+        "synthetic-private",
+        request=request,
+        response=httpx.Response(402, headers={"x-request-id": "sk-private"}, request=request),
+    )
+    diagnostic = diagnose(error, "generating")
+    assert diagnostic.http_status == 402
+    assert diagnostic.request_id is None
+    assert "private" not in diagnostic.model_dump_json()
+
+    class PrivateException(RuntimeError):
+        pass
+
+    assert diagnose(PrivateException("secret"), "generating").exception_category == "internal"
 
 
 def test_missing_key_and_deleted_profile_never_construct_client(tmp_path, monkeypatch):

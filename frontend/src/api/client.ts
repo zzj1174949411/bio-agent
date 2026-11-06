@@ -1,6 +1,7 @@
 import type { Conversation, GeoImportState, GeoSearchRequest, GeoSearchState, GeoSelection, GeoSourceState, McpServer, Message, ModelProfile, Project, SkillDetail, SkillRecord, ToolDescriptor, ToolPolicy, Turn } from "./types";
 import { parseEventBlock, type WorkbenchEvent } from "./events";
-import { knowledgeTurnPath, readKnowledgeEvents, type KnowledgeBase, type KnowledgeDocument, type KnowledgeJob, type IndexState, type KnowledgeReady, type KnowledgeTask, type EvidencePreview } from "./knowledge";
+import { wikiPath, type WikiRequest, type WikiPreflight, type WikiList, type WikiPage, type WikiJob } from "./wiki";
+import { knowledgeTurnPath, readKnowledgeEvents, type KnowledgeBase, type KnowledgeDocument, type KnowledgeJob, type IndexState, type KnowledgeReady, type KnowledgeTask, type EvidencePreview, type KnowledgeUploadLimits } from "./knowledge";
 
 type ErrorBody = { detail?: { code?: string } };
 
@@ -31,7 +32,7 @@ export class ApiClient {
   updateProject(id: string, payload: { title?: string; archived?: boolean }): Promise<Project> { return this.request(`/workbench/projects/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
   conversations(projectId: string): Promise<{ items: Conversation[] }> { return this.request(`/workbench/conversations?project_id=${encodeURIComponent(projectId)}`); }
   createConversation(projectId: string, title: string): Promise<Conversation> { return this.request("/workbench/conversations", { method: "POST", body: JSON.stringify({ project_id: projectId, title }) }); }
-  updateConversation(id: string, payload: { title?: string; archived?: boolean; selected_profile_id?: string | null; selected_knowledge_base_ids?: string[] }): Promise<Conversation> { return this.request(`/workbench/conversations/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
+  updateConversation(id: string, payload: { title?: string; archived?: boolean; selected_profile_id?: string | null; selected_knowledge_base_ids?: string[]; knowledge_mode?: "rag" | "hybrid" }): Promise<Conversation> { return this.request(`/workbench/conversations/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
   messages(conversationId: string): Promise<{ items: Message[] }> { return this.request(`/workbench/conversations/${conversationId}/messages`); }
   submitTurn(conversationId: string, text: string, datasetIds: string[] = [], profileId?: string): Promise<Turn> {
     return this.request(`/workbench/conversations/${conversationId}/turns`, { method: "POST", body: JSON.stringify({ client_request_id: crypto.randomUUID(), text, dataset_ids: datasetIds, profile_id: profileId }) });
@@ -110,11 +111,20 @@ export class ApiClient {
   decideToolCall(callId: string, approvalId: string, decision: "approve" | "deny", capabilityRevision: string, argumentsHash: string): Promise<Record<string, unknown>> { return this.request(`/extensions/calls/${encodeURIComponent(callId)}/decision`, { method: "POST", body: JSON.stringify({ approval_id: approvalId, decision, capability_revision: capabilityRevision, arguments_hash: argumentsHash }) }); }
 
   knowledgeBases(): Promise<{ items: KnowledgeBase[] }> { return this.request("/knowledge/bases"); }
+  wikiPreflight(base: string, payload: WikiRequest): Promise<WikiPreflight> { return this.request(`${wikiPath(base)}/preflight`, { method: "POST", body: JSON.stringify(payload) }); }
+  wikiBuild(base: string, payload: WikiRequest, retryId?: string): Promise<WikiJob> { return this.request(`${wikiPath(base)}/${retryId ? `jobs/${encodeURIComponent(retryId)}/retry` : "build"}`, { method: "POST", body: JSON.stringify(payload) }); }
+  wikiStatus(base: string): Promise<WikiJob | null> { return this.request(`${wikiPath(base)}/status`); }
+  wikiCancel(base: string, job: string): Promise<WikiJob> { return this.request(`${wikiPath(base)}/jobs/${encodeURIComponent(job)}/cancel`, { method: "POST", body: "{}" }); }
+  wikiPages(base: string): Promise<WikiList> { return this.request(`${wikiPath(base)}/pages`); }
+  wikiPage(base: string, page: string): Promise<WikiPage> { return this.request(`${wikiPath(base)}/pages/${encodeURIComponent(page)}`); }
+  wikiEvidence(base: string, page: string, chunk: string): Promise<EvidencePreview> { return this.request(`${wikiPath(base)}/pages/${encodeURIComponent(page)}/evidence/${encodeURIComponent(chunk)}`); }
+  wikiUrl(base: string, page: string, suffix: string): string { return `${this.base}${wikiPath(base)}/pages/${encodeURIComponent(page)}/${suffix}`; }
   createKnowledgeBase(name: string): Promise<KnowledgeBase> { return this.request("/knowledge/bases", { method: "POST", body: JSON.stringify({ name }) }); }
   renameKnowledgeBase(id: string, name: string): Promise<KnowledgeBase> { return this.request(`/knowledge/bases/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name }) }); }
   deleteKnowledgeBase(id: string): Promise<void> { return this.request(`/knowledge/bases/${encodeURIComponent(id)}`, { method: "DELETE" }); }
   knowledgeDocuments(id: string): Promise<{ items: KnowledgeDocument[] }> { return this.request(`/knowledge/bases/${encodeURIComponent(id)}/documents`); }
   knowledgeReadiness(retrieval = false): Promise<KnowledgeReady> { return this.request(`/knowledge/${retrieval ? "retrieval/" : ""}readiness`); }
+  knowledgeUploadLimits(): Promise<KnowledgeUploadLimits> { return this.request("/knowledge/limits"); }
   knowledgeIndex(id: string): Promise<IndexState> { return this.request(`/knowledge/documents/${encodeURIComponent(id)}/index`); }
   indexKnowledgeDocument(id: string): Promise<KnowledgeJob> { return this.request(`/knowledge/documents/${encodeURIComponent(id)}/index`, { method: "POST" }); }
   retryKnowledgeDocument(id: string): Promise<KnowledgeJob> { return this.request(`/knowledge/documents/${encodeURIComponent(id)}/retry`, { method: "POST" }); }

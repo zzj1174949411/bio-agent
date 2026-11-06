@@ -45,6 +45,42 @@ def test_sse_content_cannot_inject_event():
         encode_sse(1, "bad\nevent: x", {})
 
 
+@pytest.mark.parametrize(
+    "error,code",
+    [
+        (ValueError("MODEL_ACTION_INVALID"), "MODEL_ACTION_INVALID"),
+        (RuntimeError("synthetic-private C:/secret"), "MODEL_INTERNAL_ERROR"),
+    ],
+)
+def test_failure_diagnostic_is_durable_private_and_old_turns_remain_readable(tmp_path, error, code):
+    async def scenario(store):
+        def prepare(*_):
+            async def answer(_messages):
+                raise error
+                yield "unreachable"
+
+            return PreparedChat(snapshot(), answer)
+
+        service = TurnService(store, prepare)
+        await service.start()
+        conversation = chat(store)
+        submitted = await service.submit(conversation.id, uuid4(), "synthetic", uuid4())
+        await until(lambda: store.get_turn(submitted.id).status == TurnStatus.FAILED)
+        task = store.get_turn(submitted.id)
+        assert task.error_code == code and task.diagnostic.stage == "chat"
+        assert "private" not in task.model_dump_json()
+        assert "private" not in str(store.list_events(conversation.id))
+        old = task.model_dump(exclude={"diagnostic"})
+        assert Turn.model_validate(old).diagnostic is None
+        await service.close()
+        return task.id
+
+    with WorkbenchStore(tmp_path / "wb.sqlite") as store:
+        identity = asyncio.run(scenario(store))
+    with WorkbenchStore(tmp_path / "wb.sqlite") as store:
+        assert store.get_turn(identity).diagnostic.stage == "chat"
+
+
 @pytest.mark.parametrize("after,last,expected", [(None, None, 0), ("4", "7", 7), ("8", "2", 8)])
 def test_cursor_uses_larger_valid_value(after, last, expected):
     assert event_cursor(after, last) == expected

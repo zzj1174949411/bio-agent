@@ -378,3 +378,106 @@ def test_answers_freeze_profile_validate_citations_and_never_execute_documents(
             assert task.citations and task.visual_semantics == "not_performed"
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "case", ["valid", "stale", "budget", "context", "unsupported", "deleted_after"]
+)
+def test_evaluation_ask_freezes_sources_and_enforces_limits_before_call(engine, case):
+    from types import SimpleNamespace
+
+    from bioagent.knowledge.answers import AnswerService
+    from bioagent.knowledge.retrieval_models import AskRequest, EvaluationControls
+    from bioagent.models.profiles import ModelSnapshot
+
+    engine, doc = engine
+    engine.build(doc["id"])
+    doc = engine.store.document(doc["id"])
+    snapshot = ModelSnapshot(
+        provider="openai_compatible",
+        model="gpt-4o-2024-08-06",
+        base_url="https://api.openai.com/v1",
+        revision=1,
+        thinking="default",
+        structured_method="function_calling",
+    )
+    if case == "unsupported":
+        snapshot = snapshot.model_copy(update={"model": "unverified-model"})
+    controls = EvaluationControls(
+        sources=[
+            dict(
+                base_id=doc["base_id"],
+                document_id=doc["id"],
+                source_sha256="0" * 64 if case == "stale" else doc["source_sha256"],
+                parse_revision=doc["published_revision"],
+                index_revision=doc["index_revision"],
+            )
+        ],
+        model_snapshot=snapshot,
+        max_input_tokens=1 if case == "budget" else 10000,
+        max_output_tokens=500,
+        context_max_bytes=150 if case == "context" else 6000,
+    )
+
+    class Adapter:
+        calls = 0
+
+        def prepare(self, identity, fixed):
+            return self, fixed
+
+        def bind(self, **kwargs):
+            assert kwargs == {"max_tokens": 500, "temperature": 0, "seed": 42}
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            items = json.loads(messages[-1].content)
+            assert "reference_claims" not in str(items)
+            assert (
+                len(json.dumps(items["evidence"], ensure_ascii=False).encode("utf-8"))
+                <= controls.context_max_bytes
+            )
+            if case == "deleted_after":
+                engine.store.delete_document(doc["id"])
+            return SimpleNamespace(
+                content=json.dumps(
+                    {"answer": "Quoted.", "citations": [items["evidence"][0]["chunk_id"]]}
+                ),
+                usage_metadata=None,
+            )
+
+    async def scenario():
+        adapter = Adapter()
+        service = AnswerService(
+            engine,
+            SimpleNamespace(get=lambda _: SimpleNamespace(snapshot=lambda: snapshot)),
+            adapter,
+        )
+        request = AskRequest(
+            question="untrusted text",
+            knowledge_base_ids=(doc["base_id"],),
+            model_profile_id=uuid4(),
+            evaluation=controls,
+        )
+        if case in {"stale", "unsupported"}:
+            with pytest.raises(KnowledgeError, match="EVALUATION_"):
+                await service.submit(request)
+            assert adapter.calls == 0
+            return
+        task = await service.submit(request)
+        await asyncio.gather(*list(service._tasks.values()))
+        task = service.get(str(task.id))
+        if case == "valid":
+            assert task.status == "COMPLETED" and task.usage is None
+            assert task.input_token_upper_bound <= 10000 and task.context_bytes <= 6000
+            engine.store.delete_document(doc["id"])
+            assert service.get(str(task.id)).error_code == "EVIDENCE_STALE"
+        elif case == "budget":
+            assert task.error_code == "EVALUATION_INPUT_LIMIT" and adapter.calls == 0
+        elif case == "context":
+            assert task.error_code == "EVALUATION_CONTEXT_LIMIT" and adapter.calls == 0
+        else:
+            assert task.status == "FAILED" and not task.answer
+        await service.close()
+
+    asyncio.run(scenario())

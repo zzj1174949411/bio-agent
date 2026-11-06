@@ -1,30 +1,138 @@
 # Bio-Agent 当前状态
 
-**最后更新：** 2026-10-12
+**最后更新：** 2026-10-22
 
 **当前分支：** `agent/bio-agent-mvp`
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task 16–40 已实现并通过本地门禁。Task 38 `955a6f0`、Task 39 `7fc0c02` 已通过父会话独立验收。Task 40 工作台知识库管理、聊天检索和可信证据预览已通过定向测试及真实本地 UI 验收，交父会话独立验收并做 38–40 整体复盘，暂停后续编号任务。真实模型 API/真实 GEO 公网验收和 Task 15 发布收尾独立保留。
+**当前阶段：** Task45文献分块工程验证与本地对照完成，本次任务45提交收尾；Task46聊天主界面及知识库入口方案已获用户接受，用户授权指挥其他聊天开始工作。下一实施任务47为聊天界面改造及既有能力整合：左侧项目/聊天与底部知识库入口，中间对话及附件输入框，输入框旁选库，右侧文件按需预览。正式界面尚未修改。单矩阵/自动metadata另排后续任务，暂不做FASTQ或新统计方法。
+
+**任务44历史验收：** 44实现46a0b59、故障修复3a27695、初评记录7e6eb58；父会话新跑35项聚焦回归及真实本地链路通过，复核真实三组三十题与台账。原预算共49/50次、584607输入bytes，RAG10完成、Wiki9完成/1失败、hybrid10完成；混合未显示稳定优势且更慢，继续保留RAG默认。正式专家盲评仍HUMAN_BLIND_REVIEW_PENDING，不能宣称准确率提升或历史MODEL_UNAVAILABLE唯一根因已确定。真实GEO公网验收与Task15发布收尾独立保留。
 
 ## 恢复工作时先做什么
+
+**2026-10-22 新授权优先：** 用户已接受新版聊天原型和知识库管理/选库方案，并授权其他聊天开始工作。Task46规格/计划为`2026-10-22-expression-workbench-design.md` / `2026-10-22-expression-prototype.md`。先由任务45原聊天收尾已有改动，再由既有前端聊天制定唯一任务47计划并实施聊天界面改造；共用worktree单写入，47在父会话释放前只读。单矩阵/自动metadata是后续任务，不能以假附件或演示结果冒充接通。保留renv，不读取Key、不重跑付费试验、不操作根目录runs。
 
 1. 进入 `.worktrees/bio-agent-mvp`。
 2. 阅读根目录 `AGENTS.md`、已批准设计、实施计划和本文件。
 3. 运行 `git status --short --branch` 和 `git log -5 --oneline`。
-4. 不领取新编号任务。父会话阅读 `docs/superpowers/plans/2026-10-12-literature-workbench.md`、`docs/knowledge-workbench.md` 和本文件，独立验收 Task 40 并完成 38–40 整体复盘。单编号任务 40 已实现，不能重复实现或把复盘自动扩展为任务 41；图片仍仅图注/OCR，`visual_semantics=not_performed`。
+4. 任务46审阅已完成。任务45在本次提交收尾；下一任务47由既有前端聊天在父会话释放写入后写具体计划、关键失败测试并实施。一次只做一个编号任务，不同时提交共享Git索引。不重跑付费试验、不消耗剩余1次额度，不重置台账或换目录绕过限额。正式专家盲评待人工，完整60题未授权。图片仍仅图注/OCR，`visual_semantics=not_performed`。
 5. 自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过；保留 Task 15 的历史发布记录。
+
+## Task45 文献分块与证据选择（2026-10-21，2026-10-22恢复收尾）
+
+- 起点e5da324，既有worktree/agent分支。按用户“先改看看”的授权实施唯一45，取代旧停止45说明；恢复时核验HEAD=f99bada，只保留并提交原45改动，没有回退Task46设计/进度，也没有实施47。计划 `2026-10-21-literature-chunking.md`，逐题与限制见 `docs/reviews/2026-10-21-task45.md`。
+- 保留Docling解析，正文按同页同节/句子/token计数合并，目标400、正文上限450；表格完整行重复已关联元数据。新块逐元素/字段/字符区间/页码/哈希归属，模型输入用紧凑映射；不跨页合并误导旧预览。算法版本显式区分，旧索引哈希兼容；只有显式重建才迁移并撤销旧Wiki/历史答案，失败不复活。图注/OCR仍有13个超窗块、最大3239 token，沿用窗口池化，不宣称视觉理解或全部证据单窗。
+- 混合原文排名优先，再在24000字节预算内补充去重Wiki来源，Wiki导航≤1/4；新增实际原文路径/仅Wiki引入/重复候选审计。A保留旧索引与真实旧Wiki，仅改合并，60/60原文候选保留（包括06第六条、09第四条），仅Wiki引入58块；没有把新分块映射到旧Wiki冒充新构建。
+- 真实本地E5/Qdrant前后对照只在ignored `data/task45/comparison`，同三篇/原十道development题、同source/解析SHA与版本、同top6及24000预算。旧基线在改生产代码前锁定；评分由精确来源区间重算原payload，29/29参考可映射、未映射0、解析失败0。每组十题全部保留，无答案题不按检索命中计正确拒答。
+- 锁定整段参考覆盖：旧RAG7/29→新RAG15/29，旧混合9/29→A仅合并11/29；实现代理未盲的原24项事实支持复核依次8/24、16/24、9/24、12/24，均非答案准确率或正式专家评分。新索引4217→316块，短非表块3550→16。04均值±仍未召回、06缺QC度量/3 MAD，07/08仍不完整；A观测更慢，旧混合32.59s→A43.73s/题，旧/新RAG2.20/2.17s，单轮且非受控速度基准。实际输入更多，不能脱离字节量解释提升；保留RAG默认。
+- 原红灯同节合并1 failed、Git旧合并函数1 failed；沙盒asyncio卡在本机socketpair而中止，改用获准本地执行。中断前最终受影响回归113 passed in37.57s；**恢复后新跑**同集合（`--basetemp data/task45/resume-final-20261022`）为 **113 passed in58.06s**，Ruff All checks passed，mypy112 source files通过，前端typecheck退出0。模型均Mock；无UI改动，不跑全浏览器或无关R统计套件。pre-commit/cached收尾结果见下条记录。
+- 本轮供应商调用0，没有读取Key/新建付费台账/消耗旧49/50额度；原台账SHA256保持A867AE72BA9D4403DA7E927341CBDBF3BF3C86658F2D6F4157BC2034D65E6BED。新答案/新Wiki真实质量比较仍需独立授权，不因此阻塞工程收尾。renv原SHA256保持A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A；根runs与用户8000服务未操作，不push/merge。下一实施任务47按上方已批准方向由父会话安排，45聊天提交后停止写入。
+- 收尾明确暂存18个任务45文件，`uv run --no-sync --offline pre-commit run --all-files`八项hooks全部通过，`git diff --cached --check`退出0。计划与本记录随任务45实现提交，提交号以Git为准；未暂存renv、PDF/Wiki/索引/模型权重/答案或评测数据，预期提交后唯一遗留为用户renv改动。
+
+## Task46 表达矩阵工作台设计与原型（2026-10-22）
+
+- 最新审阅反馈优先：用户要求普通聊天为主，不拆分步骤页或常驻AI/结果栏。当前原型为本聊天持久目录下`chat-workspace.html`，取代首轮布局。分组、审批、运行和结果文件链接留在对话，点击文件才在右侧查看；关闭后回到完整聊天。当前只迭代任务46设计，不自动开始正式实现。
+- 新版`render.py`退出0，`node verify-chat-workspace.mjs`退出0：13项检查通过，errors=[]；覆盖普通聊天/草稿/发送、附件、本地文件预览、文件标签与关闭、示例分组与审批门禁、取消和完成、新建项目/聊天、项目文件隔离、390/320px无横向溢出及深色模式。已查看桌面、文件预览、窄屏和深色截图。初次检查断言大小写/列名不符已纠正，不是原型运行错误；所有分析结果均为合成示例，无真实检索/模型/统计。
+- 以下首轮布局和14项检查作为历史记录保留，不能视为用户已接受；正式方向以上述反馈和更新后的规格/计划为准。
+- 用户最初要求全流程，随后明确从表达矩阵开始、不做FASTQ比对/定量，并要求先设计和看原型。试作的FASTQ模块/测试/旧文档已撤回；现有生产API、R、React没有本聊天新增实现。Task45工作区文件、renv和根runs保留。
+- 设计见`docs/superpowers/specs/2026-10-22-expression-workbench-design.md`，唯一任务计划见`docs/superpowers/plans/2026-10-22-expression-prototype.md`。两种布局“分析工作台”和“对话工作台”共用上传矩阵/查找公开矩阵、样本确认、方案批准、模拟运行和结果工作区。Raw counts与TPM/log分支明确区分；后者只演示探索分析，不进入DESeq2。
+- 原型位于本聊天持久目录`[local path omitted]`。本地render退出0，Chromium检查脚本`verify-expression-workbench.mjs`最终退出0：14项交互检查通过、pageErrors=[]。390px浏览器内容视口358px、scrollWidth358px；已查看桌面、来源选择、对话布局与窄屏截图。所有研究、矩阵、图表和问答都是合成演示，无下载、Key或真实计算。
+- 中间原型缺陷和修复见计划记录；曾忘记render的`--force`导致退出2，纠正后重建成功。未运行无关生产统计/模型测试。下一步先收集用户对原型布局和操作的反馈，再写矩阵入口/自动metadata的正式实施计划；不自动启动FASTQ或新增统计方法。文档hooks、cached检查和提交结果以本任务Git收尾为准。
+- 收尾仅暂存设计、原型计划和本进度三个文件。`pre-commit run --all-files`八项hooks全部通过；默认缓存SQLite只读失败属于环境问题，已使用授权本地执行取得真实通过结果。`git diff --cached --check`退出0，提交号以Git为准；保留Task45与renv未提交状态，不push/merge。
+
+## Task 44 父会话独立验收与收尾（2026-10-16）
+
+- 独立审阅46a0b59/3a27695/7e6eb58及混合上下文筛选、快照/source epoch撤销、工作台动作所属、模型调用上限与评测分母。未发现阻止工程交付的新缺陷；质量与性能限制保留，工程通过不等于效果达标。
+- 新跑 `uv run --offline pytest tests/unit/knowledge/test_hybrid.py tests/unit/knowledge/test_evaluation.py tests/unit/knowledge/test_pilot_budget.py tests/integration/api/test_workbench_knowledge.py -q -p no:cacheprovider --basetemp data/task44/parent-check-20261016-b --tb=short`：**35 passed in19.42s**。首次误填不存在test_pilot.py为0 tests，纠正路径后采用上述有效结果。
+- 新跑 `uv run --extra rag --offline python scripts/verify_literature_hybrid.py --output data/task44/parent-local-20261016-b` 退出0：3份自制PDF真实Docling/E5/Qdrant/Wiki存储，纯Wiki无正文search、取消、Wiki单独撤销、原文重建/删除通过；LLM仅Mock，不作语义质量证据。查看既有真实生产UI验收result.json及原文PNG/390px撤销截图，恢复、取消、撤销和SSE回放撤销均true；本次未重跑浏览器，不冒称新UI测试。
+- 父会话通读三组30条答案与锁定参考，另核对06/09实际原文及sent_chunk_ids：混合确实排除了RAG第6条3000 HVGs/Harmony上下文和第4条13.5小时段落，实际6350/8175 bytes均未达24000上限。支持固定top6交替合并挤出相关原文这一局部诊断；不把所有缺答归于它。超图事实有改善，QC/GLMM耗时退步，表格±三组均缺答，跨论文解释不等于引用充分；无稳定整体优势。此为父会话工程代理复核，知道模式和开发过程，不是独立专家盲评，不填写正式scores或准确率。
+- 只读核验三组protocol/implementation/model/generation/corpus/question_ids一致，完整30题且无回退。台账49次保留1次旧未知传输；48笔已知usage合计188926 token，未知项不按零计，总费用未知。父会话未调用供应商，不消耗剩余1次。正式60题/保留集/专家盲评未完成；仅获授权的小样本运行完成。
+- 42–44整体复盘见 `docs/reviews/2026-10-15-tasks42-44.md`，使用见 `docs/knowledge-hybrid.md`。保留默认RAG；后续优化需另有任务，不扩展45。`git show --check`检查三个44提交通过，`uv run --offline pre-commit run --all-files`八项hooks通过，三个文档diff检查通过。提交仅本次三个文档，保留renv既有SHA256及根runs，不push/merge；最终暂存检查与提交号以Git为准。
+
+## Task 44 故障修复跟进（2026-10-16）
+
+- 基于46a0b59，保持原分支/worktree，仅处理用户“为什么、怎么办、怎么解决”及明确继续授权，不领取45。使用systematic-debugging，所有新守卫先本地红灯后实现；没有新的子代理或产品多Agent功能。
+- 本地HTTP/1.1 keep-alive假服务器复现：asyncio.run首探测成功，随后TestClient后端使用SDK按endpoint/timeout缓存的异步客户端时报Event loop is closed。探测改走现有backend portal，同一循环连续调用回归成功。真实第2次未记录底层异常，不能回填唯一根因。
+- 人工恢复追加事件，保留旧calls/bytes/usage未知；存在RESERVED_UNKNOWN拒绝恢复。所有调用前持久预留，仍50次、单次32000/累计1600000消息bytes、输出2000token、未知传输停止、无自动重试/换模型。用户答“继续，沿用原50次总预算”。
+- 恢复后连接正常，但先遇输出JSON校验、未提供导航链接、短标签混引。第4次输出2000token，截断仅为推断（旧响应缺finish_reason）；现增加DeepSeek JSON object、简短声明提示词和明确length拒绝发布。导航只接受服务端已提供候选，丢弃计数，不影响原文引用约束。第11次ID/hash匹配而两条quote不匹配实际text，严格拒绝未发布。
+- Wiki输入新增可选min_context_chars，默认0兼容；本次80，跳过非表格短标签、完整保留表格，不改RAG原文索引。coverage以全部原文为分母并记录filtered_short_chunks。剩余额度动态缩段并预留30问，成功响应有界内容/finish_reason写ignored，原始异常体和Key不落日志。
+- 本地相关回归114 passed in39.42s；过滤专项先1 failed/14 passed，后38 passed in19.95s。Ruff通过，mypy112 source files通过，8项pre-commit通过。初次广回归误用不存在路径为0 tests/退出1，纠正后取得有效114通过；全工作区diff检查包含用户renv既有空白，最终以明确任务文件的cached检查为准，不修改renv。
+- 真实恢复已退出0，同一data/task44/real-pilot。成功Wiki用7次、54530输入/4017输出token；coverage分别30/508、30/2331、29/1378 chunks，过滤307/2141/1102短块，均truncated。综合输入17/89 chunks，导航丢弃0；有限覆盖不代表全篇结论。
+- 最终台账49/50次、584607消息输入bytes，最大单次23975 bytes，输出限额始终≤2000。48响应/1旧MODEL_CONNECTION_FAILED；48次已知usage小计173271输入/15655输出/188926总token，旧第2次usage和总费用仍未知，不按零计。无新的传输故障、无在途预留；stopped=false表示本次正常结束，默认非空目录仍拒绝重跑，不追加剩余1次。
+- 三组同题、同语料/模型/Wiki快照、实现与schema hash已只读核验；均live且没有fallback，完整30分母：rag10 COMPLETED，wiki9 COMPLETED/1 FAILED，hybrid10 COMPLETED。Wiki pilot_04模型拒绝从缺失Table2摘录编造数字，返回空citations，违反当前ModelAnswer至少一条引用契约而报MODEL_OUTPUT_INVALID；不重试、不删题、不当正确答案计入。blind-packet/reference-sheet/scores/manager-key已生成，评分仍空，HUMAN_BLIND_REVIEW_PENDING。
+- 实测每题平均耗时rag6.62s、wiki101.94s、hybrid74.89s（含检索/校验，非仅供应商延迟），Wiki/混合本地链路明显慢；本轮不扩大到性能改造。只读审计与简要结果保存在ignored operator-audit.json/operator-summary.md。最终文档和提交检查见本任务fix提交；不push/merge，不改用户8000服务或renv。
+- 用户追问“效果呢”后只读复核30条答案及锁定参考，初评见ignored `data/task44/real-pilot/preliminary-effect-review.md`，没有新增调用，正式scores仍空。混合补全超图基础事实，但QC参数及GLMM耗时反而漏答，尚无稳定优势；表格±三组均未答出，无答案剂量题三组均拒答。实际audit证明固定top6交替合并将RAG第06题第6条QC流程片段、09题第4条13.5小时段落挤出，context分别6350/8175 bytes，未耗尽24000预算。跨文献综合更流畅也不代表引用充分（缺MASLD支持段）。这是参与实现的代理初评，非独立专家盲评；不生成准确率/显著性，不修改实现或启动下一任务。
+
+## Task 44 Wiki+原文混合检索与评测（2026-10-16，初次记录）
+
+- 起点a33685b，指定worktree/agent分支；先writing-plans、再executing-plans执行唯一44。子代理分别负责工作台UI、评测和语料准备，未增加产品多Agent编排。初始红灯缺hybrid模块；不重复42/43、不push/merge、不开始45。
+- CURRENT Wiki用BM25/本地E5独立检索，页面/同库链接补找原文，与原文检索轮流合并去重；纯wiki不调用正文search。上下文独立原文/派生预算，完整chunk和声明选入，按实际原文筛掉无法回源的Wiki陈述，记录retrieved/sent数量、字节及chunk/page IDs。正常无Wiki显式回退原文，实验禁止回退；rag默认，Wiki不算独立研究，引用合法不当语义正确。
+- 对话持久rag/hybrid模式；提交冻结模式、库、原文revision、Wiki generation/page集合和模型。模型action无mode/scope/path权限；新增来源不扩展在途轮次。读取/生成/预览/SSE重新校验。source epoch让失败/取消重建也永久撤销旧答案，补红灯1 failed/4 passed后修复；重启中断清空原文与派生上下文。旧记录字段默认兼容，普通聊天/GEO/分析审批保留。
+- 独立审查修复两处：Wiki未随实际原文裁剪声明（红灯1 failed/3 passed），普通回退仍保留Wiki引入原文（改为重新仅用原文候选）。DeepSeek SDK真实HTTP Mock先复现None字段仍被序列化，再去掉seed/max_completion_tokens字段，保留官方extra_body.max_tokens及thinking disabled；不改用户配置、不承诺未知token/费用上界。实现hash含混合、Wiki、快照契约和受控供应商源码。
+- 三模式评测保持相同hash/模型/上下文/题目；增加10题pilot（全development），保留正式60题六类各10与15/45隔离。Wiki成本/覆盖/版本记录；参考不进入构建/生成，评价不写回Wiki。盲评移除模式/检索分数，未填评分null，失败/取消/NOT_RUN全分母，配对拒绝成功前缀。无Wiki的dry-run仍保留分母并标MISSING，live失败关闭。
+- 最终真实离线API命令 `uv run --extra rag --offline python scripts/verify_literature_hybrid.py --output data/task44/acceptance-final` 退出0：三份自制PDF真实Docling/E5/Qdrant/Wiki存储，LLM仅内存Mock。三种上下文实际不同、纯wiki无正文search、回源、取消、Wiki单独撤销、原文重建/删除与SSE撤销全部通过。产物仅ignored。
+- 后端最终命令含hybrid/pilot预算/retrieval/wiki/evaluation、三个API专项及turn_service：**99 passed in43.45s**。前端最终 **19 files/42 tests passed in53.01s**，typecheck/build退出0。Ruff All checks passed，mypy112 source files通过，pre-commit全仓8 hooks通过；最终暂存检查见本任务提交记录。未跑无关Python/R统计套件。
+- 真实生产UI+独立4184服务第一次及最终均 **1 passed(1.5m)**，验证三PDF/Wiki初建、rag/hybrid、回源PNG、切换/刷新/取消、重建后历史/预览/SSE撤销与1280/390px布局；已查看最终原文/窄屏截图。中间复跑遇默认5s图像等待失败，trace显示PNG请求尚未完成而非已返回错误；等待对齐renderer15s+校验启动边界，仍要求真实PNG完整加载且可见。随后遥测监听在刷新后读取已销毁response body使测试提前退出，修正监听导航竞态后最终成功；产品代码不因这两项测试修正改变。自建4184验收服务收尾关闭，用户8000未操作。
+- 用户已直接确认向DeepSeek发送三篇选定论文（HDCTI、单细胞差异分析假发现、MASLD→MASH，48页）的有界摘录，10题/三组/全局50次、输出2000、消息输入单次32000/累计1600000 bytes。独立隔离库重新解析索引；人工参考含19元素/29支持子串，两表格题查看PDF。跨chunk参考先红灯再精确完整覆盖重映射；不使用Mock替代真实论文。
+- 真实结果：`data/task44/real-pilot/global-ledger.json` 为 **2次、23454输入bytes、stopped=true**。第1次最小探测成功（14输入/5输出/19总token）；第2次Wiki首段23426 bytes、输出限额2000，MODEL_CONNECTION_FAILED，diagnostic=connection、HTTP/request ID均null、usage未知。此笔按可能计费保留，不退款、不重试。Wiki发布失败，无真实答案；rag/wiki/hybrid均10个NOT_RUN，共30完整分母。REAL_COMPARISON_PENDING，无准确率、无独立盲评结果；最小探测不能证明大输入/完整协议或历史故障根因已修复。
+- 构建预检原需13调用（探测+构建最多20，预留30问）：三篇覆盖90/508、92/2331、104/1378 chunks，均truncated，页面输入范围分别1–4、1–6、1–3；因第1构建请求失败，这些只是计划覆盖，不能说已完成摘要。所有原文、Wiki输入/索引/台账/答案/参考均ignored，无Key入Git。
+- 使用/启动/API见 `docs/knowledge-hybrid.md`，三组工具见 `docs/knowledge-evaluation.md`，整体复盘见 `docs/reviews/2026-10-15-tasks42-44.md`。唯一应保留的未提交用户文件是renv/activate.R，SHA256仍A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A；根runs未操作。
+- 收尾明确暂存37个任务44文件，`git diff --cached --check`退出0，暂存后 `uv run --offline pre-commit run --all-files` 8 hooks再次全部通过。未暂存renv、PDF、Wiki内容、权重、索引、台账/参考/答案、运行数据或Key。任务44提交后停止，实际commit及最终状态以Git记录为准。
+
+## Task 43 文献 Wiki（2026-10-15）
+
+- 父会话独立工程验收（`a940ccb`）：审阅来源quote/hash匹配、原文/模型快照、输入覆盖、调用预留、原子发布/复用、source epoch及SQL触发器级联撤销、跨库API和UI卸载隔离。新跑Wiki单元与API专项 **13 passed in17.88s**；独立真实Docling/E5/Qdrant脚本输出 ignored `data/task43/parent-acceptance-20261015`，退出0，三份自制PDF、首次5次Mock/增量2次、重启一致、重建及删除级联撤销通过。查看子会话真实浏览器记录和PDF原文/390px页面截图，layout-390为scrollWidth390/overflow空；未重复整个浏览器套件，未宣称本轮重跑该UI。`git show a940ccb --check`退出0。工程验收通过可进入44；真实供应商协议/费用/Wiki语义均仍未验证，不能把Mock摘要当效果。
+- 起点 `ee974ed`，既有 `.worktrees/bio-agent-mvp` / `agent/bio-agent-mvp`；按已批准 Wiki 设计使用 writing-plans 制定单编号任务计划，并按 executing-plans 在本聊天实现。不重复42，不开始44，不新开聊天/产品多Agent编排，不 push/merge。用户 `renv/activate.R` SHA256保持 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`，根 runs未操作。
+- 新增独立Wiki强类型契约、SQLite任务/输入/实际调用/页面版本/依赖/head记录。显式preflight/build冻结READY原文source/parse/index及source epoch、模型/profile、提示词/schema/input hash。上传不调用模型；预检不读凭据。每条生成陈述回指实际发送主chunk的quote/hash及库/document/element/页码；归属和匹配不作为语义蕴含保证。
+- 完整chunk分段，长论文保留覆盖率和跳过/截断信息；论文页合并分段，综合按文献轮流选有界原文，页面/导出携带实际覆盖。每次系统+JSON输入有字节上限，冻结输入与发布页面各8MiB；输出返回后按字节拒收超限内容。调用前持久化预留，无隐式重试或自动模型切换；缺失usage为null/部分未知。沿用用户模型协议绑定max_tokens/num_predict，但Wiki profile协议尚未真实验证，不能承诺供应商token/费用上界，预检/UI/说明明确提示。
+- 无变化SKIPPED零调用；新未READY文献只标待更新，不重复重建相同READY内容。未受影响论文页复用，受影响论文与聚合页重建；模型/profile/提示词/schema变化全量重建，避免混合快照。完整验证后事务切换generation；中途/发布失败保留旧有效版本，不生成失败占位摘要。
+- 原始来源删除、parse/current/index/source/status变化与显式索引重建请求，在原事务内递归撤销当前/历史页面及聚合链接；在途索引排除出Wiki来源。source epoch阻止迟到构建发布；物理hash篡改在读取时持久撤销，恢复原始bytes也不复活旧陈述。STALE列表不返回陈述/引用/链接，页面/导出/预览拒绝。取消/重试/关闭/重启均有持久终态，重启不自动模型调用。
+- 新API和管理页提供预检、开始/停止/重试、状态、论文/概念方法/主题页面、链接、固定Markdown导出及原文结构/静态PNG/PDF下载。沿用本机Host/Origin/CSRF、进程owner lease和库/UUID归属；本机知识库仍共享，未新增多用户权限系统。模型内容不生成可执行指令、路径、HTML或任意链接，不改AGENTS.md、原RAG/普通聊天、统计/GEO审批。
+- 红灯：最初因Wiki模块不存在收集失败；长输入发布coverage缺失为1 failed，补齐页面/导出覆盖后通过。收尾专项先证明在途索引旧READY仍被选入（1 failed）及提示词变化仍复用旧论文页（1 failed），最小修正后最终聚焦全部通过。测试fixture导入/缺父临时目录属于环境/测试设置错误，未计为功能结果；默认uv缓存ACL失败使用已授权本地离线执行。
+- 最终命令 `uv run --offline pytest tests/unit/knowledge/test_wiki.py tests/unit/knowledge/test_retrieval.py tests/unit/knowledge/test_store.py tests/integration/api/test_wiki.py tests/integration/api/test_knowledge_retrieval.py -q -p no:cacheprovider --basetemp data/task43/final-verified --tb=short` 为 **48 passed in28.90s**。Ruff **All checks passed**（既有ACL warning），mypy **109 source files通过**。KnowledgeManager Vitest **4 passed**，前端typecheck/production build退出0；不跑无关Python/R统计套件。
+- 真实离线API验收 `uv run --extra rag --offline python scripts/verify_literature_wiki.py --output data/task43/acceptance-final-verified` 退出0：三份自制PDF真实Docling→E5→Qdrant，生成5页、首次5次Mock调用，选中短论文重建仅2次（长论文重建为3次，取决于实际分段），另两篇复用；原文quote核验、跨库拒绝、PNG、Markdown、SKIPPED、Mock原RAG、重启一致、索引重建和删除级联撤销均通过。产物仅ignored data，无用户PDF或Key/供应商调用。
+- 真实Chromium专项 **1 passed (32.3s)**，使用独立4183 API及生产静态UI，模型均内存Mock：预检零调用→显式构建→主题/论文链接→原文PNG→导出→重建级联失效→取消。首次窄屏断言误把既有流式布局当回归，已按任务41契约修正；随后实测390px出现403px横向溢出，定位长模型名选择框，约束父label后390px/scrollWidth390且overflow空，桌面独立滚动保持。验收截图/布局JSON在ignored data/task43/ui-acceptance；自建4183服务已关闭，用户8000未停止/重启。
+- 使用说明见 `docs/knowledge-wiki.md`。工程无未解决阻塞；真实语料、付费调用预算、Wiki语义质量、真实供应商协议/成本和RAG真实基线仍待验收，不能把Mock或合法引用当事实准确性。下一步仅父会话独立验收43，再安排44混合检索/聊天模式与三组真实质量比较。
+- 收尾明确暂存20个任务43文件；`uv run --offline pre-commit run --all-files` **8 hooks全通过**，`git diff --cached --check`退出0。未暂存renv、PDF、权重、Wiki内容、索引、数据、报告或Key。任务43实现提交后停止，不开始44；预期唯一未提交改动仍为用户renv/activate.R（上述SHA256）。提交号与最终Git状态见本任务最后commit及交接报告。
+
+## Task 42 模型诊断与文献评测基线（2026-10-15）
+
+- 父会话独立工程验收（`34c5c6e`）：审阅错误分类/诊断脱敏、旧记录默认字段、Ask语料与模型快照、预算预留/未知调用停止、保留集隔离、盲评/失败分母与配对一致性。新运行 `uv run --offline pytest tests/unit/models/test_model_profiles.py tests/unit/knowledge/test_evaluation.py tests/unit/knowledge/test_retrieval.py -q -p no:cacheprovider --basetemp data/task42/parent-20261015 --tb=short` 为 **71 passed in13.35s**；独立CLI dry-run输出 ignored `data/task42/parent-dry-run`，NOT_RUN=1/REAL_BASELINE_PENDING且无API调用；`git show 34c5c6e --check`退出0，renv哈希保持。工程验收通过，可进入43；历史真实供应商故障仍未定位，实际语义基线未跑。受控live目前仅支持两款固定官方OpenAI模型，用户现有DeepSeek不能使用此评测路径；后续实际评测前必须明确支持能力/预算，不能静默换模型或假装该路径已联调。
+- 起点b139e60，既有worktree/agent/bio-agent-mvp。未重复验收41；保留用户renv原改动和根runs，不push/merge、不调用真实Key/模型/用户PDF，不停止或重启用户8000服务。原始四次DeepSeek失败没有异常证据，仍不能判断余额、模型名、网络或动作解析；只修复代码已证明的语义折叠。
+- 统一错误码区分连接/超时/认证/402/404/限流/协议/5xx/内部与动作/输出校验；精确固定MODEL_ACTION_INVALID保持动作语义，任意异常字符串不能成为错误码。新增diagnostic默认None兼容旧turn/Ask/probe，仅阶段、允许列表类别、HTTP status与受限opaque ID；不存原始消息、响应体、Key、URL、提示词、聊天正文、traceback或路径。前端共享解释不猜测历史原因。
+- literature-eval.v1冻结语料source SHA256与parse/index、题目split/category/人工参考证据、生成配置。正式60题六类各10，开发15/保留45；重复ID/文本、跨split重复、证据所属/revision不符拒绝。示例仅两题合成契约，UUID/hash占位，不是专家标注。生成请求无参考答案，wiki_build_input仅corpus无任何题目；wiki/hybrid明确MODE_NOT_IMPLEMENTED。
+- CLI默认dry-run零API访问。live显式profile及三项预算，通过本机bootstrap/cookie/Origin/CSRF复用Ask。Ask可选evaluation参数在提交/检索/生成/发布/历史核验冻结来源与模型，统计审批不变。仅两个官方固定OpenAI文本模型可约束预算，DeepSeek/Ollama/自定义兼容配置评测live以EVALUATION_LIMITS_UNSUPPORTED在模型调用前拒绝；不修改它们的普通聊天配置。固定temp0/seed42/prompt版本，完整evidence JSON字节上限，实际消息UTF8 bytes+1024作为保守token上界，绑定max_tokens且无SDK自动重试；每题完整预算预留、失败/超时/usage缺失不退还，usage未知不算零。
+- 输出模式/快照/版本/实现hash、逐题状态/答案/证据/耗时/usage，完整分母在bootstrap前持久化；提交前保存中断未知状态及预算，不自动恢复重试。盲评packet与参考sheet无模型模式，manager-key单独保管；空CSV评分不当0，未跑题禁止评分，失败正确率不能为1。汇总逐类分子/分母，配对胜平负/差值/固定seed bootstrap区间，未配齐明确provisional。
+- 红灯：首次新增分类/脱敏/契约为7 failed（另23沙盒临时目录权限error，不能算功能结果）；转为可用离线执行后37 passed/2 missing-contract failed。Ask预算/快照红灯4 failed/1 passed；runner暴露checkpoint停止分母漏写；自检完整上下文JSON红灯1 failed。独立只读审查发现本机API拒绝误分类与中断checkpoint丢分母两个P2，分别红灯1 failed和2 failed后最小修复；复核确认两个P2关闭，无新问题。
+- 最终定向命令覆盖models profiles、API profiles、evaluation、retrieval/Ask、turn service、workbench knowledge与knowledge retrieval API：**118 passed in25.65s**。最终Ruff **All checks passed**；mypy **105 source files通过**。Vitest **19 files/40 tests passed（2.53s）**，typecheck/production build退出0。沙盒Vitest初次TEMP ENOENT属于环境失败，重跑取得上述有效结果；uv默认缓存/pytest临时目录权限失败也单独记录，最终测试使用可用权限且全为离线Mock。
+- 示例dry-run：**NOT_RUN=1、REAL_BASELINE_PENDING**（默认development），未访问API；hybrid CLI明确MODE_NOT_IMPLEMENTED并非零退出。所有Mock分数仅测工具，不作为语义准确率。使用说明docs/knowledge-evaluation.md，人工协议evals/literature/README.md。真实基线阻塞项只为用户尚未指定授权语料和调用/token预算、供应商实际可用性尚未验证；不阻止后续独立Wiki工程，但44效果验收不能跳过。
+- 收尾明确暂存27个任务文件后，pre-commit **8 hooks全通过**，`git diff --cached --check`退出0（完整聚焦命令见任务42计划执行记录）。用户renv SHA256仍为A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A且未暂存；未提交数据、PDF、索引、模型权重、Key或运行报告。任务42提交后停止，下一步仅父会话独立验收与安排43。
+
+## Task 41 交接（2026-10-12）
+
+- 父会话独立验收（2026-10-15，`4643fd1`）：`uv run --offline pytest tests/unit/knowledge tests/integration/api/test_knowledge.py -q -p no:cacheprovider` **32 passed in 31.78s**；真实 Chromium usability 专项 **3 passed (8.6s)**，覆盖聊天/左右列独立滚动、设置/知识库可达、100份自动上传/失败重试与390/1000宽度。数据输出 ignored `data/task41/parent-20261015`，浏览器使用固定 API fixture，无供应商/用户文献调用。审阅共享限制、上传循环冻结目标/卸载隔离和桌面/窄屏布局；`git show 4643fd1 --check` 退出0，用户renv哈希未变。任务41验收通过；此结果不等于100篇真实解析或供应商模型质量验收。
+- 用户在 RAG 收尾后新报告整体滚动和 PDF 上传无原因禁用，明确授权本任务，并追加“单份 50 MiB，一次可选择 1–100 份”的需求。起点 `cb7ccba`，既有 worktree / `agent/bio-agent-mvp`；没有重新实施任务 38–40，不启动 42、不 push/merge。
+- 桌面 grid/flex 视口及收缩轨道约束使聊天、项目和结果各自滚动，标题/输入区保持可用；设置与知识库独立滚动。小于 1200px 恢复页面流，390/1000px 下资源、底部设置与文献按钮可达。基础知识库控件沿用现有样式，长文件名/消息换行。
+- 统一 `knowledge/limits.py`：单份 50 MiB、HTTP 每请求最多 4 份、总请求 201 MiB（含 multipart 余量）、UI 每次最多 100 份。上传路由、Store、Docling `max_file_size` 与请求中间件共享常量；前端读取 `/api/v1/knowledge/limits`，旧后端缺此接口时明确提示更新，不猜测上限。
+- 一次点击自动逐份串行上传，显示文件大小、已上传/总数及每份状态；失败继续，超限跳过，其余可传，仅重试失败项。上传目标库冻结，上传期间禁切库；停止/卸载阻止后续请求并忽略迟到回调。已发请求允许结束，已成功导入文献保留，解析取消沿原机制。页面关闭后未上传/失败列表不持久化，重新选择时服务端同库 SHA256 去重。
+- readiness 的解析/检索独立读取，一项失败不会遮蔽另一项；等待、操作中、文件数量与大小均给可见原因。解析仍串行、200 页、600 秒、4 GiB RSS、100 MiB 输出；文件大小不保证解析内存或质量。
+- 红灯：组件 **4 failed**；后端边界 **2 failed (6.53s)**（旧 Store 10 MiB 与请求 41 MiB）；修正浏览器 fixture/工具 buffer 传输后 **2 failed, 1 passed**，捕获 timeline 无独立滚动与提示缺失。
+- 验证：知识库后端单元及上传 API **32 passed (12.50s)**；前端 **18 files / 39 passed (2.57s)**，最终上传专项 **4 passed (1.38s)**；默认 Playwright **8 passed, 1 skipped (12.3s)**，最终三项专项 **3 passed (6.9s)**。新用例真实 Chromium 检查 scrollTop、window.scrollY=0、各列坐标/标题输入可见、设置/文献底部与390/1000px无横溢出；100 份合成 File 自动发送、失败继续及仅失败重试通过。截图 ignored `data/task41/final`，已实际查看。
+- `npm run typecheck` / 最终 `npm run build`、Ruff、mypy **103 source files** 通过。默认沙盒 uv 访问拒绝与 Vitest worker 临时文件 ENOENT 使用已授权执行环境解决；Ruff 测试行长已修正。八项 `uv run --offline pre-commit run --all-files` 全通过，17 个任务文件明确暂存后 `git diff --cached --check` 退出 0，renv 未暂存。默认沙盒不能写 worktree index.lock，使用已有 Git 提交授权完成暂存和提交。
+- 限制：100 份浏览器上传使用 API fixture，合成 4×11 MiB/50 MiB 后端测试禁止解析；本次不声称100篇真实解析/检索质量，不调用真实供应商或使用用户 PDF。用户8000服务未停止/重启；新 dist 已构建，必须由用户重启后端并刷新才可应用新限制。根 main runs 未动；renv 用户哈希保持 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`。
 
 ## Task 40 交接（2026-10-12）
 
+- 父会话独立验收（`6d799ce`）：审阅每对话选库、固定库/索引/模型快照、动作及读取归属、取消/切换隔离、可信引用与撤销、PDF/图表预览及既有审批边界。新运行 `uv run --extra rag --offline pytest tests/integration/api/test_workbench_knowledge.py -q -p no:cacheprovider` 为 **7 passed in 8.73s**；`git show 6d799ce --check` 退出 0。独立服务数据目录为 ignored `data/task40/parent-ui-20261012`，真实本地 UI 用例 **1 passed (1.1m)**：三份合成 PDF 使用真实 Docling/E5/Qdrant，问答仅内存 Mock；2026-10-12 UTC 12:42:17.092 开始、12:43:08.389 三份 READY、12:43:21.869 完成。六条检索命中、验证后分段、PDF/表格/图片、选择切换/刷新、重建/删除撤销三轮答案、旧资源 409、失效 SSE、窄屏通过；实际查看 PDF 页、图片和撤销窄屏截图。38–40 整体复盘通过，无阻止本轮收尾的问题；测试服务已停止，未调用真实供应商。
 - 实施计划 `docs/superpowers/plans/2026-10-12-literature-workbench.md`；使用、准备、失效规则与真实 UI 重跑命令见 `docs/knowledge-workbench.md`。仅任务 40，不 push/merge/PR，根 runs 未改动。
 - 工作台接入库管理、批量 PDF、解析/索引独立 readiness 与阶段、取消/重试/重建/删除；按对话保存库选择，切换/刷新恢复，安装文档可直接打开。缺可选依赖不阻塞既有聊天/分析。
 - 强类型 `knowledge_ask(question)` 不允许模型选库；提交时保存服务端 READY 索引集合及模型快照，复用当轮临时客户端。新增文献不扩展本轮范围；排队/生成/历史读取时原版本失效稳定拒绝。工作台只保存 ask 引用和操作状态，不复制已验证答案或未经验证知识前言，撤销后 SSE 不重放旧答案。
 - 新读取路由核对 owner、conversation/turn/ask 和实际引用，重验磁盘哈希。静态 PDF 页固定无网络子进程渲染，有时间/内存/输出限制，避免浏览器 PDF 插件被 sandbox 阻止；原 PDF 作附件下载。表格结构/图注/脚注及图片裁剪有受控预览。页面转义内容、忽略模型链接，每两秒及聚焦时撤销失效答案/打开预览。
 - 定向后端 **140 passed (109.79s)**，随后仅增加旧 JSON 默认字段兼容测试，最终任务定向 **7 passed (9.27s)**；前端 **35 passed / 17 files (8.54s)**。全部浏览器 **6 passed (1.2m)**，其中真实 Docling/E5/Qdrant 与 Mock 问答流程约 1.1m，五项既有 fixture 回归覆盖模型、GEO/确认/审批及扩展。typecheck/build、Ruff、mypy **102 source files**、八项 pre-commit、暂存 diff 检查通过，详细命令与真实结果见计划。
 - 真实 UI 记录与实际查看的截图：ignored `data/task40/ui-acceptance/`。三份短合成 PDF 解析/索引 READY、检索六条命中、生成与验证事件、分段答案、PDF 页像素/表格/真实 picture 裁剪、选择切换/刷新、重建/删除撤销三轮答案、旧 PDF 409 与失效 SSE 不重放、窄屏通过。模型与凭据为内存 Mock；未读取真实 Key，未做真实供应商问答验收。
-- 38–40 自查依据：解析→独立 READY→固定范围/模型→可信答案→核验预览→撤销在实际 UI 连通，统计执行仍在原人工审批边界。旧 JSON 新字段提供默认值，无破坏性迁移。剩余限制为短合成英文语料、OCR/双栏/跨页表格缺陷、图像检索措辞敏感、无视觉推理、无真实问答语义质量验收；引用归属不等于语义正确。父会话仍需独立验收和整体复盘。
+- 38–40 复盘依据：解析→独立 READY→固定范围/模型→可信答案→核验预览→撤销在实际 UI 连通，统计执行仍在原人工审批边界。旧 JSON 新字段提供默认值，无破坏性迁移。剩余限制为短合成英文语料、OCR/双栏/跨页表格缺陷、图像检索措辞敏感、无视觉推理、无真实问答语义质量验收；引用归属不等于语义正确。父会话独立验收和整体复盘已完成，详细记录见整体复盘文档。
 - 已保留 `renv/activate.R` 用户改动，SHA256 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`。Git/Ruff 的 `.pytest-reg-final30/` 访问警告是既有 ACL，检查退出 0。提交门禁完成后只应剩该用户修改。
 
 ## Task 39 交接（2026-10-12）

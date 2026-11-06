@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from bioagent.knowledge.limits import MAX_REQUEST_BYTES
+
 
 def is_workbench_path(path: str) -> bool:
     return any(
@@ -92,7 +94,7 @@ class LocalAccessMiddleware:
             body = bytearray()
             path = scope.get("path", "")
             if path.startswith("/api/v1/knowledge/bases/") and path.endswith("/documents"):
-                body_limit = 41 * 1024 * 1024
+                body_limit = MAX_REQUEST_BYTES
             elif path == "/api/v1/geo" or path.startswith("/api/v1/geo/"):
                 body_limit = 2 * 1024 * 1024
             else:
@@ -101,10 +103,11 @@ class LocalAccessMiddleware:
                 message = await receive()
                 if message["type"] == "http.disconnect":
                     return
-                body.extend(message.get("body", b""))
-                if len(body) > body_limit:
+                fragment = message.get("body", b"")
+                if len(body) + len(fragment) > body_limit:
                     await reject("REQUEST_TOO_LARGE", 413)
                     return
+                body.extend(fragment)
                 if not message.get("more_body", False):
                     break
             consumed = False

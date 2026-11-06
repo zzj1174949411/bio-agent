@@ -73,6 +73,18 @@ def cancel_index(job_id: UUID, deps: Deps) -> IndexJob:
 
 @router.post("/search", response_model=SearchResponse)
 def search(payload: SearchRequest, deps: Deps) -> SearchResponse:
+    if payload.mode != "rag":
+        bases = [str(key) for key in payload.knowledge_base_ids]
+        hybrid = deps.answer_service.hybrid
+        return hybrid.retrieve(
+            payload.query,
+            bases,
+            payload.mode,
+            deps.retrieval_engine.snapshot(bases),
+            hybrid.snapshot(bases),
+            24000,
+            top_k=payload.top_k,
+        ).page
     return deps.retrieval_engine.search(
         payload.query, [str(key) for key in payload.knowledge_base_ids], payload.top_k
     )

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from bioagent.knowledge.chunks import ALGORITHM
 from bioagent.knowledge.retrieval_models import IndexJob, IndexState
 from bioagent.knowledge.store import KnowledgeError, KnowledgeStore, _now, identifier
 
@@ -50,6 +51,7 @@ class IndexCatalog:
                 status="QUEUED",
                 created_at=_now(),
                 updated_at=_now(),
+                chunking_algorithm=ALGORITHM,
             )
             db.execute(
                 "INSERT INTO index_jobs VALUES(?,?,?)",

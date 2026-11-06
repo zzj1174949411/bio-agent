@@ -14,9 +14,9 @@ from threading import RLock, local
 from typing import Any
 from uuid import UUID, uuid4
 
+from bioagent.knowledge.limits import MAX_PDF_BYTES
 from bioagent.knowledge.models import ParsedDocument
 
-MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_OUTPUT_BYTES = 100 * 1024 * 1024
 
 

@@ -128,3 +128,15 @@ with httpx.Client(base_url='http://127.0.0.1:8000', timeout=180) as client:
 真实本地验收命令：`uv run --extra rag --offline python scripts/verify_literature_retrieval.py --output data/task39/acceptance-final3`。实际结果、最初失败及质量限制见 [实验记录](research/2026-10-12-retrieval-experiment.md)。问答模型为 Mock，未验证付费供应商的真实输出质量。
 
 模型答案只允许文本和本轮 chunk UUID 引用；HTTP/file URL、Windows/UNC 路径、Markdown 链接和 HTML 超链接会被拒绝。PDF 与资产链接由服务端从已验证引用生成，不采信模型生成的来源地址。
+
+## Task45 分块版本与显式迁移
+
+Docling 解析器和 `parsed.v1` 保持不变。新索引使用 `section-sentence-e5-400-450-table-rows-v2`：在同页同章节合并短正文，优先保持句子/段落，使用已安装的 E5 tokenizer 测量包含章节的实际 embedding 输入，目标400、正文上限450 token。只有超长句才进一步按字词预算拆分；不增加解析器或模型依赖。标题/页码/短无句义标签留在完整解析中，不作为独立正文检索块。
+
+表格按完整 Markdown 行拆分，重复已关联的表名/列标题/单位/脚注；不猜测 Docling 未关联的图注、跨页关系或合并单元格语义。单行过大、完整图注/OCR过大时保留原文并标 `token_overflow=true`，沿用 E5 已有窗口池化，不能说所有图表都在450 token内。没有视觉推理。真实三篇中正文最大441/448/439 token，图注/OCR仍有13个超窗块，最大3239 token；这是保留的限制。
+
+`Chunk.sources` 保存每个实际片段的元素ID、字段/下标、原文字符区间、块内字符区间、页码/坐标和元素SHA256。合并相邻连续片段，模型输入只附紧凑位置映射，不重复发送来源正文。每次读取新索引重新从已核验的解析文件检查所有片段及其归属，块内非空白文字必须全部有原文来源。旧 `element_id/page` 为兼容导航锚点；模型输入、预览API及Wiki导出提供完整来源。正文不跨页合并，现有页面预览仍定位正确页。
+
+旧索引没有算法字段时明确识别为 `element-char1200-v1`，继续按原哈希读取；搜索响应的 `retrieval.chunking_algorithms` 显示实际算法。只有用户显式重建索引才迁移，未知算法拒绝读取，旧排队任务不会静默换算法。重建请求仍立即撤销旧 Wiki/答案，即使重建失败也不会复活旧内容。迁移后需要另行显式构建 Wiki，不能修改旧 Wiki 的引用ID冒充新构建。
+
+本地对照和限制见 [Task45 验收记录](reviews/2026-10-21-task45.md)。保留 RAG 默认；本轮没有新的真实 LLM 答案或完整新 Wiki 效果结论。
