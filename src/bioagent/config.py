@@ -24,6 +24,19 @@ class Settings(BaseSettings):
     local_dev_origin: str | None = None
     rscript: str = "Rscript"
 
+    # GEO resource limits are server policy, never values supplied by a model or URL.
+    geo_max_file_bytes: int = 100 * 1024 * 1024
+    geo_max_total_bytes: int = 300 * 1024 * 1024
+    geo_max_expanded_bytes: int = 200 * 1024 * 1024
+    geo_max_archive_files: int = 1
+    geo_connect_timeout_seconds: float = 10.0
+    geo_read_timeout_seconds: float = 30.0
+    geo_download_timeout_seconds: float = 300.0
+    geo_disk_reserve_bytes: int = 400 * 1024 * 1024
+    geo_requests_per_second: float = 2.0
+    geo_max_retries: int = 2
+    geo_max_redirects: int = 3
+
     @field_validator("local_dev_origin")
     @classmethod
     def local_vite_origin(cls, value: str | None) -> str | None:

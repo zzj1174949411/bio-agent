@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from bioagent.artifacts.manifest import AgentContext
+from bioagent.geo.repository import GeoRepository, GeoRepositoryError, GeoSourceRecord
 
 if TYPE_CHECKING:
     from bioagent.api.dependencies import DependencyContainer
@@ -26,7 +27,13 @@ class AnalysisService:
         from bioagent.api.routes import _stored_validation
 
         _, summary = _stored_validation(dataset_id, self._dependencies)
+        context = (
+            AgentContext.model_validate(agent_context) if agent_context is not None else None
+        )
+        source = self._source_for_run(dataset_id, context)
         run_id = self._dependencies.artifact_manager.create_run()
+        if source is not None:
+            self._copy_source(run_id, source)
         config = {"configurable": {"thread_id": run_id}}
         initial: dict[str, Any] = {
             "run_id": run_id,
@@ -34,10 +41,8 @@ class AnalysisService:
             "user_goal": goal,
             "summary": summary.model_dump(mode="json"),
         }
-        if agent_context is not None:
-            initial["agent_context"] = AgentContext.model_validate(agent_context).model_dump(
-                mode="json"
-            )
+        if context is not None:
+            initial["agent_context"] = context.model_dump(mode="json")
         try:
             result = self._dependencies.graph.invoke(initial, config)
             from bioagent.api.routes import _workflow_state
@@ -64,3 +69,35 @@ class AnalysisService:
         from bioagent.api.routes import _cancel_run
 
         return _cancel_run(run_id, response, self._dependencies)
+
+    def _source_for_run(
+        self, dataset_id: str, context: AgentContext | None
+    ) -> GeoSourceRecord | None:
+        if context is None or context.source_id is None:
+            return None
+        repository = getattr(self._dependencies, "geo_repository", None)
+        if not isinstance(repository, GeoRepository):
+            raise GeoRepositoryError("GEO_SOURCE_NOT_FOUND", "source repository is unavailable")
+        try:
+            record = repository.read(context.source_id)
+        except GeoRepositoryError:
+            raise
+        except (FileNotFoundError, ValueError) as error:
+            raise GeoRepositoryError(
+                "GEO_SOURCE_NOT_FOUND", "source record is unavailable"
+            ) from error
+        if record.dataset_id != dataset_id:
+            raise GeoRepositoryError("SOURCE_DATASET_MISMATCH")
+        return record
+
+    def _copy_source(self, run_id: str, source: GeoSourceRecord) -> None:
+        files = (
+            ("source/raw/source.bin", source.raw_path),
+            ("source/source.json", source.source_json),
+            ("source/normalized/counts.csv", source.counts_path),
+            ("source/normalized/metadata.csv", source.metadata_path),
+        )
+        for artifact_id, path in files:
+            if not path.is_file():
+                raise GeoRepositoryError("GEO_SOURCE_CACHE_TAMPERED", "source file is missing")
+            self._dependencies.artifact_manager.write_bytes(run_id, artifact_id, path.read_bytes())

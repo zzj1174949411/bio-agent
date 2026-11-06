@@ -370,6 +370,24 @@ class WorkbenchStore:
             )
             return changed
 
+    def set_geo_source(self, conversation_id: UUID | str, source_id: UUID) -> Conversation:
+        with self._transaction() as db:
+            original = self._get(
+                db, "conversations", conversation_id, Conversation, "CONVERSATION_NOT_FOUND"
+            )
+            changed = Conversation.model_validate(
+                {
+                    **original.model_dump(),
+                    "geo_source_id": source_id,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            db.execute(
+                "UPDATE conversations SET updated_at=?, record=? WHERE id=?",
+                (changed.updated_at.isoformat(), changed.model_dump_json(), str(changed.id)),
+            )
+            return changed
+
     def find_run_turn(self, run_id: UUID | str) -> Turn | None:
         with self._lock:
             rows = self._db.execute("SELECT record FROM turns").fetchall()

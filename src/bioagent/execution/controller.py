@@ -157,6 +157,13 @@ class ExecutionController:
             input_hashes,
             agent_context,
         )
+        source_records = self._source_records(run_id, agent_context, plan.dataset_id)
+        if (
+            previous_manifest is not None
+            and previous_manifest.source_artifacts
+            and tuple(source_records) != previous_manifest.source_artifacts
+        ):
+            raise ExecutionRejectedError("SOURCE_ARTIFACT_TAMPERED")
         recovered_attempts, recovered_artifacts = self._recover_orphan_attempts(
             run_id=run_id,
             spec=spec,
@@ -183,6 +190,7 @@ class ExecutionController:
                 approval=current_approval,
                 previous=previous_manifest,
                 run_records=(*input_records, plan_record),
+                source_records=source_records,
                 snapshot_paths=snapshot_paths,
                 execution_key=execution_key,
                 agent_context=agent_context,
@@ -203,6 +211,7 @@ class ExecutionController:
             recovered_attempts=recovered_attempts,
             recovered_artifacts=recovered_artifacts,
             run_records=(*input_records, plan_record),
+            source_records=source_records,
             snapshot_paths=snapshot_paths,
             execution_key=execution_key,
             cancelled=cancelled,
@@ -323,6 +332,7 @@ class ExecutionController:
         recovered_attempts: Sequence[AttemptRecord],
         recovered_artifacts: Sequence[ArtifactRecord],
         run_records: Sequence[ArtifactRecord],
+        source_records: Sequence[ArtifactRecord],
         snapshot_paths: tuple[Path, Path],
         execution_key: str,
         cancelled: CancellationCheck | None,
@@ -381,9 +391,11 @@ class ExecutionController:
                 attempt=terminal_attempt,
                 artifacts=(
                     *run_records,
+                    *source_records,
                     *recovered_artifacts,
                     *attempt_records,
                 ),
+                source_records=source_records,
                 agent_context=agent_context,
             )
             return ExecutionResult(
@@ -412,7 +424,8 @@ class ExecutionController:
             previous=previous,
             recovered_attempts=recovered_attempts,
             attempt=terminal_attempt,
-            artifacts=(*run_records, *recovered_artifacts, *attempt_records),
+            artifacts=(*run_records, *source_records, *recovered_artifacts, *attempt_records),
+            source_records=source_records,
             agent_context=agent_context,
         )
         return ExecutionResult(
@@ -436,6 +449,7 @@ class ExecutionController:
         approval: ApprovalRecord,
         previous: RunManifest | None,
         run_records: Sequence[ArtifactRecord],
+        source_records: Sequence[ArtifactRecord],
         snapshot_paths: tuple[Path, Path],
         execution_key: str,
         agent_context: AgentContext | None,
@@ -516,8 +530,10 @@ class ExecutionController:
                 "attempts": attempts,
                 "artifacts": self._merge_artifacts(
                     previous.artifacts,
-                    (*run_records, qc_record, *collected),
+                    (*run_records, *source_records, qc_record, *collected),
                 ),
+                "source_id": agent_context.source_id if agent_context is not None else None,
+                "source_artifacts": tuple(source_records),
                 "agent_context": agent_context,
             }
         )
@@ -639,6 +655,7 @@ class ExecutionController:
         recovered_attempts: Sequence[AttemptRecord],
         attempt: AttemptRecord,
         artifacts: Sequence[ArtifactRecord],
+        source_records: Sequence[ArtifactRecord],
         agent_context: AgentContext | None,
     ) -> None:
         prior_approvals = previous.approvals if previous is not None else ()
@@ -669,6 +686,8 @@ class ExecutionController:
                 "approvals": self._merge_approvals(prior_approvals, approval),
                 "attempts": (*prior_attempts, *recovered_attempts, attempt),
                 "artifacts": self._merge_artifacts(prior_artifacts, artifacts),
+                "source_id": agent_context.source_id if agent_context is not None else None,
+                "source_artifacts": tuple(source_records),
                 "agent_context": agent_context,
             }
         )
@@ -728,6 +747,46 @@ class ExecutionController:
             raise ExecutionRejectedError("RUN_INPUT_HASH_MISMATCH")
         if previous.agent_context != agent_context:
             raise ExecutionRejectedError("RUN_AGENT_CONTEXT_MISMATCH")
+        previous_source_id = previous.source_id
+        current_source_id = agent_context.source_id if agent_context is not None else None
+        if previous_source_id != current_source_id:
+            raise ExecutionRejectedError("RUN_SOURCE_ID_MISMATCH")
+
+    def _source_records(
+        self,
+        run_id: str,
+        agent_context: AgentContext | None,
+        dataset_id: str,
+    ) -> tuple[ArtifactRecord, ...]:
+        if agent_context is None or agent_context.source_id is None:
+            return ()
+        source_files = (
+            ("source/raw/source.bin", "raw_sha256"),
+            ("source/source.json", None),
+            ("source/normalized/counts.csv", "counts_sha256"),
+            ("source/normalized/metadata.csv", "metadata_sha256"),
+        )
+        source_json_path = self._artifact_manager.resolve(run_id, "source/source.json")
+        try:
+            payload = json.loads(source_json_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, TypeError, ValueError) as error:
+            raise ExecutionRejectedError("SOURCE_ARTIFACT_TAMPERED") from error
+        if not isinstance(payload, Mapping):
+            raise ExecutionRejectedError("SOURCE_ARTIFACT_TAMPERED")
+        if payload.get("source_id") != str(agent_context.source_id):
+            raise ExecutionRejectedError("SOURCE_ID_MISMATCH")
+        if payload.get("dataset_id") != dataset_id:
+            raise ExecutionRejectedError("SOURCE_DATASET_MISMATCH")
+        records: list[ArtifactRecord] = []
+        for artifact_id, digest_key in source_files:
+            path = self._artifact_manager.resolve(run_id, artifact_id)
+            if not path.is_file():
+                raise ExecutionRejectedError("SOURCE_ARTIFACT_MISSING")
+            digest = self._file_sha256(path)
+            if digest_key is not None and payload.get(digest_key) != digest:
+                raise ExecutionRejectedError("SOURCE_ARTIFACT_TAMPERED")
+            records.append(ArtifactRecord(relative_path=artifact_id, sha256=digest))
+        return tuple(records)
 
     @staticmethod
     def _agent_context(state: Mapping[str, object]) -> AgentContext | None:

@@ -9,7 +9,6 @@ from io import StringIO
 from multiprocessing import get_context
 from multiprocessing.connection import Connection
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from time import monotonic
 from typing import Annotated, Literal, cast
 
@@ -27,6 +26,7 @@ from bioagent.domain.qc import QCReport, QCStatus
 from bioagent.domain.runs import RunStatus
 from bioagent.execution.r_runner import RExecutionCancelledError
 from bioagent.llm.planner import PlanningDatasetSummary
+from bioagent.services.datasets import DatasetImportError
 from bioagent.workflow.state import (
     WorkflowState,
     validate_approval_decision,
@@ -272,19 +272,15 @@ async def create_dataset(
 ) -> dict[str, object]:
     counts_content = await _read_upload(counts, dependencies)
     metadata_content = await _read_upload(metadata, dependencies)
-    with TemporaryDirectory(prefix="bioagent-upload-") as temporary:
-        temporary_dir = Path(temporary)
-        counts_path = temporary_dir / f"counts{_upload_suffix(counts)}"
-        metadata_path = temporary_dir / f"metadata{_upload_suffix(metadata)}"
-        counts_path.write_bytes(counts_content)
-        metadata_path.write_bytes(metadata_content)
-        _validate_paths(counts_path, metadata_path, dependencies)
-    dataset_id = dependencies.dataset_repository.create(
-        counts_content,
-        metadata_content,
-        _upload_suffix(counts),
-        _upload_suffix(metadata),
-    )
+    try:
+        dataset_id = dependencies.dataset_import_service.import_uploaded(
+            counts_content,
+            metadata_content,
+            _upload_suffix(counts),
+            _upload_suffix(metadata),
+        )
+    except DatasetImportError as error:
+        raise _error(error.code, error.status_code, **error.details) from error
     return {"dataset_id": dataset_id}
 
 

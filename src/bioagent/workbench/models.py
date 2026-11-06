@@ -17,6 +17,9 @@ EventKind = Literal[
     "action.failed",
     "input.required",
     "run.updated",
+    "geo.source",
+    "geo.import_suggested",
+    "geo.updated",
     "turn.completed",
     "turn.failed",
     "turn.cancelled",
@@ -48,6 +51,7 @@ class Project(TimedRecord):
 class Conversation(Project):
     project_id: UUID
     selected_profile_id: UUID | None = None
+    geo_source_id: UUID | None = None
 
 
 class TurnStatus(StrEnum):

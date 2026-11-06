@@ -10,6 +10,7 @@ from hashlib import sha256
 from pathlib import Path
 from threading import RLock, local
 from typing import Any, cast
+from uuid import uuid4
 
 from fastapi import Request
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -23,6 +24,11 @@ from bioagent.domain.runs import RunStatus
 from bioagent.execution.controller import ExecutionController, calculate_plan_hash
 from bioagent.execution.job_runner import JobStatus, LocalJobRunner
 from bioagent.execution.r_runner import RRunner
+from bioagent.geo.client import GeoClient
+from bioagent.geo.download import GeoDownloader
+from bioagent.geo.repository import GeoRepository
+from bioagent.geo.service import GeoImportService
+from bioagent.geo.transport import GeoTransport
 from bioagent.llm.factory import create_chat_model
 from bioagent.llm.planner import AnalysisPlanner
 from bioagent.models.adapters import ModelAdapter
@@ -30,9 +36,11 @@ from bioagent.models.secrets import SecretStore, SystemSecretStore
 from bioagent.models.store import ModelProfileStore
 from bioagent.reporting.workflow import ArtifactReporter
 from bioagent.services.analysis import AnalysisService
+from bioagent.services.datasets import DatasetImportService
 from bioagent.storage.checkpoint import sqlite_checkpoint
 from bioagent.storage.runs import RunRepository
 from bioagent.tools.registry import ToolRegistry
+from bioagent.workbench.models import TurnStatus
 from bioagent.workbench.store import WorkbenchStore
 from bioagent.workbench.turns import ChatFactory, ConfiguredChatFactory, TurnService
 from bioagent.workflow.graph import build_graph
@@ -84,6 +92,7 @@ class ExecutionAdapter:
 class DependencyContainer:
     settings: Settings
     dataset_repository: DatasetRepository
+    dataset_import_service: DatasetImportService
     run_repository: RunRepository
     artifact_manager: ArtifactManager
     graph: Any
@@ -98,6 +107,7 @@ class DependencyContainer:
     model_adapter: ModelAdapter
     workbench: WorkbenchStore
     turn_service: TurnService
+    geo_service: GeoImportService
     analysis_service: AnalysisService = field(init=False)
     jobs_by_run: dict[str, str] = field(default_factory=dict)
     jobs_lock: RLock = field(default_factory=RLock)
@@ -107,7 +117,19 @@ class DependencyContainer:
         with self.jobs_lock:
             return self.run_locks.setdefault(run_id, RLock())
 
+    def geo_api_owner(self) -> tuple[str, str]:
+        """Create an explicit durable event owner for a direct GEO API request."""
+        project = self.workbench.create_project("GEO API imports")
+        conversation = self.workbench.create_conversation(project.id, "GEO import")
+        turn = self.workbench.begin_turn(
+            conversation.id, uuid4(), "GEO import requested through the API", None
+        )
+        self.workbench.update_turn(turn.id, TurnStatus.RUNNING)
+        self.workbench.complete_output(turn.id)
+        return str(conversation.id), str(turn.id)
+
     def shutdown(self) -> None:
+        self.geo_service.close()
         self.job_runner.close()
         with self.jobs_lock:
             jobs = tuple(self.jobs_by_run.items())
@@ -231,6 +253,33 @@ def build_dependencies(
     if timeout_value <= 0:
         raise ValueError("parse_timeout_seconds must be positive")
 
+    dataset_import_service = cast(
+        DatasetImportService,
+        supplied.get("dataset_import_service")
+        or DatasetImportService(
+            dataset_repository,
+            max_upload_bytes=max_upload_value,
+            max_rows=max_rows,
+            max_columns=max_columns,
+            parse_timeout_seconds=float(timeout_value),
+        ),
+    )
+    geo_repository_value = supplied.get("geo_repository") or GeoRepository(
+        settings.data_dir / "sources"
+    )
+    geo_repository = cast(GeoRepository, geo_repository_value)
+    geo_service = cast(
+        GeoImportService,
+        supplied.get("geo_service")
+        or GeoImportService(
+            geo_repository,
+            GeoClient(GeoTransport()),
+            GeoDownloader(GeoTransport(), root=settings.data_dir / "sources"),
+            dataset_import_service,
+            event_sink=_workbench_geo_event_sink(workbench),
+        ),
+    )
+
     def default_readiness() -> bool:
         return (
             not errors
@@ -246,6 +295,7 @@ def build_dependencies(
     container = DependencyContainer(
         settings=settings,
         dataset_repository=dataset_repository,
+        dataset_import_service=dataset_import_service,
         run_repository=run_repository,
         artifact_manager=artifact_manager,
         graph=graph,
@@ -260,10 +310,14 @@ def build_dependencies(
         model_adapter=model_adapter,
         workbench=workbench,
         turn_service=turn_service,
+        geo_service=geo_service,
     )
     analysis_service = AnalysisService(container)
     container.analysis_service = analysis_service
     turn_service.bind_analysis(analysis_service)
+    turn_service.bind_geo(geo_service)
+    geo_service.bind_event_sink(_workbench_geo_event_sink(workbench))
+    geo_service.bind_ready_sink(turn_service.resume_geo_ready)
     stack.callback(container.shutdown)
     return container
 
@@ -274,6 +328,22 @@ def _positive_int(value: object, label: str) -> int:
     if value <= 0:
         raise ValueError(f"{label} must be positive")
     return value
+
+
+def _workbench_geo_event_sink(workbench: WorkbenchStore) -> Callable[[dict[str, object]], None]:
+    """Project persisted GEO state onto the existing per-conversation event log."""
+
+    def publish(event: dict[str, object]) -> None:
+        conversation_id = event.pop("conversation_id", None)
+        turn_id = event.pop("turn_id", None)
+        kind = event.pop("kind", None)
+        if not isinstance(conversation_id, str) or not isinstance(turn_id, str):
+            return
+        if kind != "geo.updated":
+            return
+        workbench.append_event(conversation_id, turn_id, "geo.updated", event)
+
+    return publish
 
 
 def _recover_orphaned_api_runs(

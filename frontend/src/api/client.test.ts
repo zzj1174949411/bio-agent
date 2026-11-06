@@ -11,4 +11,10 @@ describe("ApiClient", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({detail:{code:"INPUT_RESPONSE_CONFLICT"}}), {status:409, headers:{"Content-Type":"application/json"}}));
     await expect(new ApiClient().respondToTurn("t1", "old", 1, "Control")).rejects.toMatchObject({code:"INPUT_RESPONSE_CONFLICT", status:409});
   });
+  it("submits GEO selection with the preview revision and hash", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id: "import-1" }), { status: 202, headers: { "Content-Type": "application/json" } }));
+    await new ApiClient().submitGeoSelection("import-1", { source_id: "source-1", candidate_id: "candidate-1", raw_sha256: "a".repeat(64), feature_column: "feature_id", sample_columns: ["GSM1"], sample_map: { GSM1: "GSM1" }, groups: { GSM1: "AD" }, group_factor: "condition", numerator: "AD", denominator: "Control", revision: 2, evidence: ["confirmed"] });
+    expect(fetchMock.mock.calls[0][0]).toContain("/geo/imports/import-1/selection");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toMatchObject({ revision: 2, raw_sha256: "a".repeat(64) });
+  });
 });

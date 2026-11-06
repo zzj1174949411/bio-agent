@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sqlite3
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
@@ -9,7 +10,7 @@ import pytest
 from pydantic import SecretStr
 
 from bioagent.workbench.events import encode_sse, event_cursor, stream_events
-from bioagent.workbench.models import TurnModelSnapshot, TurnStatus
+from bioagent.workbench.models import Message, Turn, TurnModelSnapshot, TurnStatus
 from bioagent.workbench.store import WorkbenchStore
 from bioagent.workbench.turns import Clarification, ConfiguredChatFactory, PreparedChat, TurnService
 
@@ -315,6 +316,183 @@ def test_default_driver_freezes_config_and_excludes_private_reasoning(
     assert b"synthetic-not-for-db" not in path.read_bytes()
     assert b"private-reasoning" not in path.read_bytes()
     assert "synthetic-not-for-db" not in caplog.text
+
+
+def test_configured_driver_exposes_only_restricted_geo_tools(monkeypatch):
+    from bioagent.models.profiles import ModelProfile
+
+    profile = ModelProfile(
+        id=uuid4(), label="test", credential_ref="internal", **snapshot().model_dump()
+    )
+    profiles = Mock()
+    profiles.request_config.return_value = (profile, None)
+
+    class BoundModel:
+        async def astream(self, _messages):
+            yield SimpleNamespace(
+                content="",
+                tool_calls=[
+                    {"id": "call-1", "name": "geo_lookup", "args": {"accession": "GSE123"}}
+                ],
+            )
+
+    class Model:
+        def __init__(self):
+            self.tools = None
+
+        def bind_tools(self, tools):
+            self.tools = tools
+            return BoundModel()
+
+    model = Model()
+    monkeypatch.setattr("bioagent.workbench.turns.ChatOllama", Mock(return_value=model))
+    prepared = ConfiguredChatFactory(profiles)(profile.id, None)
+
+    async def collect():
+        return [item async for item in prepared.stream(())]
+
+    outputs = asyncio.run(collect())
+    assert outputs == [{"kind": "geo_lookup", "accession": "GSE123"}]
+    assert {tool["function"]["name"] for tool in model.tools} == {
+        "geo_lookup",
+        "geo_import",
+    }
+
+
+def test_configured_driver_reassembles_streamed_geo_tool_arguments(monkeypatch):
+    from bioagent.models.profiles import ModelProfile
+
+    profile = ModelProfile(
+        id=uuid4(), label="test", credential_ref="internal", **snapshot().model_dump()
+    )
+    profiles = Mock()
+    profiles.request_config.return_value = (profile, None)
+
+    class BoundModel:
+        async def astream(self, _messages):
+            yield SimpleNamespace(
+                content="",
+                tool_call_chunks=[
+                    {"index": 0, "id": "call-1", "name": "geo_lookup", "args": '{"accession":"GSE'}
+                ],
+            )
+            yield SimpleNamespace(
+                content="",
+                tool_call_chunks=[{"index": 0, "args": '123"}'}],
+            )
+
+    class Model:
+        def bind_tools(self, _tools):
+            return BoundModel()
+
+    monkeypatch.setattr("bioagent.workbench.turns.ChatOllama", Mock(return_value=Model()))
+    prepared = ConfiguredChatFactory(profiles)(profile.id, None)
+
+    async def collect():
+        return [item async for item in prepared.stream(())]
+
+    assert asyncio.run(collect()) == [{"kind": "geo_lookup", "accession": "GSE123"}]
+
+
+def test_configured_driver_rejects_untrusted_geo_tool_fields(monkeypatch):
+    from bioagent.models.profiles import ModelProfile
+
+    profile = ModelProfile(
+        id=uuid4(), label="test", credential_ref="internal", **snapshot().model_dump()
+    )
+    profiles = Mock()
+    profiles.request_config.return_value = (profile, None)
+
+    class BoundModel:
+        async def astream(self, _messages):
+            yield SimpleNamespace(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "geo_lookup",
+                        "args": {"accession": "GSE123", "download_url": "https://evil.test"},
+                    }
+                ],
+            )
+
+    class Model:
+        def bind_tools(self, _tools):
+            return BoundModel()
+
+    monkeypatch.setattr("bioagent.workbench.turns.ChatOllama", Mock(return_value=Model()))
+    prepared = ConfiguredChatFactory(profiles)(profile.id, None)
+
+    async def collect():
+        return [item async for item in prepared.stream(())]
+
+    with pytest.raises(ValueError, match="MODEL_ACTION_INVALID"):
+        asyncio.run(collect())
+
+
+def test_geo_ready_resume_uses_the_current_turn_goal():
+    now = datetime.now(UTC)
+    conversation_id = uuid4()
+    prior_turn_id, current_turn_id = uuid4(), uuid4()
+    current_turn = Turn(
+        id=current_turn_id,
+        conversation_id=conversation_id,
+        client_request_id=uuid4(),
+        created_at=now,
+        updated_at=now,
+    )
+    messages = (
+        Message(
+            id=uuid4(),
+            conversation_id=conversation_id,
+            turn_id=prior_turn_id,
+            role="user",
+            content="Earlier unrelated request",
+            created_at=now,
+            updated_at=now,
+        ),
+        Message(
+            id=uuid4(),
+            conversation_id=conversation_id,
+            turn_id=current_turn_id,
+            role="user",
+            content="Analyse the confirmed GEO dataset",
+            created_at=now,
+            updated_at=now,
+        ),
+    )
+
+    class Store:
+        def __init__(self):
+            self.goal = None
+
+        def get_turn(self, _identity):
+            return current_turn
+
+        def list_messages(self, _identity, limit=20):
+            return SimpleNamespace(items=messages)
+
+        def set_run_id(self, _turn_id, _run_id):
+            return None
+
+        def append_event(self, *_args):
+            return None
+
+    class Analysis:
+        def create_run(self, **kwargs):
+            self.goal = kwargs["goal"]
+            return str(uuid4())
+
+    store, analysis = Store(), Analysis()
+    service = TurnService(store, lambda *_: None, analysis=analysis)  # type: ignore[arg-type]
+    service.resume_geo_ready(
+        {
+            "dataset_id": "dataset-1",
+            "published_source_id": str(uuid4()),
+            "context": {"conversation_id": str(conversation_id), "turn_id": str(current_turn_id)},
+        }
+    )
+    assert analysis.goal == "Analyse the confirmed GEO dataset"
 
 
 def test_retry_after_service_restart_does_not_prepare_or_reinvoke(tmp_path):

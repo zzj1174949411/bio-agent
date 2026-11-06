@@ -17,6 +17,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bioagent.api.dependencies import build_dependencies
+from bioagent.api.geo_routes import router as geo_router
 from bioagent.api.local_access import LocalAccessMiddleware, is_workbench_path
 from bioagent.api.model_routes import router as model_router
 from bioagent.api.routes import router
@@ -189,6 +190,7 @@ def create_app(
     app.include_router(router)
     app.include_router(model_router)
     app.include_router(workbench_router)
+    app.include_router(geo_router)
 
     @app.api_route(
         "/api",

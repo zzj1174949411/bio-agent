@@ -17,6 +17,7 @@ Bio-Agent 是本地单用户、单 LangGraph 编排器的 bulk RNA-seq 双组分
 | `tools/`、`tool_specs/deseq2.yaml` | 固定工具注册表、参数适配与输出契约，不接受用户指定脚本 |
 | `execution/r_runner.py`、`r/deseq2/` | 参数数组、固定 R 入口、独立工作目录、超时、日志；DESeq2 统计与绘图 |
 | `reporting/` | 从已验证 artifact 构建摘要，使用自动转义模板生成确定性 HTML；可选叙述器受事实句式约束 |
+| `geo/` | NCBI GEO 元数据发现、受限下载、显式样本映射、来源缓存和 source/dataset 绑定 |
 | `artifacts/`、`storage/` | 受控路径、manifest 原子写入、独立 SQLite checkpoint 与 API run 索引 |
 
 ```mermaid
@@ -90,7 +91,7 @@ schema 失败最多请求模型修正 1 次；DeepSeek 客户端当前最多重�
 | `runs/<run_id>/run.json` | API 查询索引和项目运行历史 | 查询状态不能替代 manifest/产物核验 |
 | `runs/<run_id>/manifest.json` 与产物 | 科研参数、审批、输入及产物哈希、attempt 和 QC | 不依赖 LangGraph 格式，但 SHA-256 不是数字签名 |
 
-默认数据集原始上传保存在 `data/` 下的内部 UUID 目录；执行时复制进该 run 的输入快照。目录概况如下：
+默认数据集原始上传保存在 `data/` 下的内部 UUID 目录；GEO 来源保存在独立的 `data/sources/` 缓存，执行时将选定来源和 dataset 输入复制进该 run 的受控目录。目录概况如下：
 
 ```text
 runs/<run_id>/
@@ -107,10 +108,14 @@ runs/<run_id>/
 │   ├── logs/
 │   └── qc.json
 ├── report/report.html
+├── source/
+│   ├── raw/source.bin
+│   ├── source.json
+│   └── normalized/{counts.csv,metadata.csv}
 └── manifest.json
 ```
 
-manifest 保存 run/dataset/attempt ID、批准的 revision/hash、输入 SHA-256、工具、Git commit、比较方向、alpha、shrink、随机种子、时间、状态、QC、审批记录及产物相对路径与哈希。当前默认 API 的 `software_versions` 取自 `renv.lock` 中的 R/DESeq2 版本；实际加载的 R 和包版本记录在 `results/session_info.txt`，复现时需一起检查。Git commit 也不能表示工作区未提交改动，因此发布演示要记录实际 checkout 状态。
+manifest 保存 run/dataset/attempt ID、批准的 revision/hash、输入 SHA-256、工具、Git commit、比较方向、alpha、shrink、随机种子、时间、状态、QC、审批记录及产物相对路径与哈希。若分析来自 GEO，manifest 还保存来源 ID 和 source artifact 记录；旧的无来源 manifest 仍可读取。当前默认 API 的 `software_versions` 取自 `renv.lock` 中的 R/DESeq2 版本；实际加载的 R 和包版本记录在 `results/session_info.txt`，复现时需一起检查。Git commit 也不能表示工作区未提交改动，因此发布演示要记录实际 checkout 状态。
 
 输入哈希针对原始文件字节；metadata 重排与全零 feature 移除是确定性步骤并记录 QC 事件。跨操作系统复现重点是统计结果及其数值容差，不能要求带运行时间、UUID 的 manifest 或图像文件跨次运行逐字节相同。
 
@@ -121,6 +126,8 @@ manifest 保存 run/dataset/attempt ID、批准的 revision/hash、输入 SHA-25
 Controller 将输入快照和获批计划也登记在 `manifest.artifacts`，因此 `input/counts.csv`、`input/metadata.csv`（或 TSV）以及 `plans/plan-v<revision>.json` 都可经 artifact API 下载。API 没有 ZIP 端点；完整离线包应按 [演示指南](demo.md) 下载全部登记产物和 manifest、保持相对路径，并核验产物及输入哈希。报告中的图链接依赖这种目录结构。
 
 报告节点将 manifest 与当前工作流的 run、dataset、attempt、plan revision、规范化 plan hash 和 QC 逐项核对，并重新验证全部登记产物的 SHA-256。只有证据匹配才从当前 attempt 的结果构建 HTML，再将报告登记回 manifest。身份或证据失配、生成或写入失败均返回 `FAILED` 与 `REPORT_FAILED`，不会完成成功报告路径。
+
+GEO 来源在创建 run 时完成 source/dataset 一致性检查并复制；R 执行前、完成态复用和 API 重启恢复都会重算来源文件哈希。来源缓存或 run 副本被篡改时，执行会拒绝复用并保留诊断。下载 API 只接受由 manifest 记录计算出的不透明 artifact ID。
 
 默认 API 生成确定性 HTML。报告模块另有可选 LLM 叙述器，但默认依赖装配不启用它；它仅允许基于已验证摘要的规定事实句式，不允许补充统计数字、未执行方法或临床/因果结论。LLM 不可用不会使确定性报告失去统计内容。
 

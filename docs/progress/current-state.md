@@ -1,20 +1,20 @@
 # Bio-Agent 当前状态
 
-**最后更新：** 2026-09-08
+**最后更新：** 2026-09-12
 
 **当前分支：** `agent/bio-agent-mvp`
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task 20 已完成 React 工作台与模型设置；前端测试、类型检查、构建、后端回归和提交门禁通过。下一编号任务为 21（启动、浏览器验收和门禁），本次停在任务 20 检查点。Task 15 的旧远端发布与剩余手工演示状态独立保留。
+**当前阶段：** Task 27 已完成 GEO 来源绑定、真实 DESeq2 双 shrink 模式端到端验收和文档；下一编号任务为 28（Skills/MCP）。Task 15 的旧远端发布与剩余手工演示状态独立保留。
 
 ## 恢复工作时先做什么
 
 1. 进入 `.worktrees/bio-agent-mvp`。
 2. 阅读根目录 `AGENTS.md`、已批准设计、实施计划和本文件。
 3. 运行 `git status --short --branch` 和 `git log -5 --oneline`。
-4. 阅读下文“下一阶段设计与计划”，再读取 2026-09-08 工作台设计/计划；保留 Task 15 的历史发布记录。
-5. 只领取任务 21，不把 GEO 或 MCP 提前混入。自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过。16–19 整体复盘已完成；任务 20 是当前已完成检查点。
+4. 阅读下文“下一阶段设计与计划”，再读取 2026-09-08 GEO 设计/计划；保留 Task 15 的历史发布记录。
+5. 只领取当前编号任务，不把后续范围提前混入。自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过。25–27 整体复盘已完成；任务 27 是当前已完成检查点。
 
 ## 已完成
 
@@ -395,7 +395,7 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 - 文档补充首次安装、生产构建、单命令启动、开发双终端、模型/Key 边界、日志定位和 R 前置条件；CI 新增 Node 22 前端 job，原 Python/R job 保持。Playwright 生成目录已加入 `.gitignore` 并清理。
 - 定向验证：`npm ci` 完成；`npm run test -- --run` 为 **10 files / 14 passed**；typecheck、build 通过；`npm run e2e` 为 **1 passed**；静态/启动定向测试 **23 passed**；check 脚本单元测试 **20 passed**；真实工作台 e2e 参数化 shrink **2 passed**。完整真实 R 组合为 **7 passed**（含既有真实 runner、发布、bulk、recovery 与本工作台）。
 - 统一 `powershell -ExecutionPolicy Bypass -File scripts/check.ps1` 全部通过：前端安装/测试/类型检查/构建/浏览器、R testthat **37 passed**、Python 公共回归 **457 passed、1 skipped、1 deselected**、真实 R/e2e **7 passed**，仅保留 pytest 缓存目录的 Windows 权限 warning。未执行远端 CI、未调用真实模型或读取真实 Key。
-- 用户要求保留 `renv/activate.R` 的自动空白变更；该文件未暂存、未提交，其他任务 21 文件已明确暂存。任务 21 不接 GEO、Skills 或 MCP，不 push、不合并。
+- 统一门禁运行 `renv::restore` 后产生了 `renv/activate.R` 的自动空白变更；该文件未暂存、未提交，其他任务 21 文件已明确暂存。任务 21 不接 GEO、Skills 或 MCP，不 push、不合并。
 
 ## Task 19–21 整体复盘
 
@@ -403,9 +403,70 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 - 科研证据边界保持不变：模型不能伪造批准，审批前 attempt 为零；真实合成 R 运行证明批准后 QC、报告和 artifact hash 可复核。凭据仍在系统存储/环境引用边界，测试没有真实模型或 Key。
 - 真实浏览器与真实 R 合成证据现已具备；远端 CI、provider 联调、GEO GSE、Skills/MCP 和多 Agent 编排仍属于后续阶段。
 
+## Task 22 GSE 检索和候选分类
+
+- 会话开始已确认 worktree 为 `.worktrees/bio-agent-mvp`、分支为 `agent/bio-agent-mvp`，并核对任务 21 实现提交 `6744161` 与文档更正提交 `6e3beb3`。既有的 `renv/activate.R` 自动空白改动保持未暂存、未修改。
+- 新增严格冻结的 GEO source、sample、字段和候选模型；GSE 仅接受单一、去除首尾空白并大写的 `GSE[1-9][0-9]*`，URL、GSM、零号和多个编号均被稳定拒绝。
+- `GeoClient` 仅检索 SOFT 元数据和 NCBI counts catalog 元数据，不下载候选文件。SOFT 保留 GSM、物种、平台、标题以及重复 characteristics 的原始列表并标注字段来源；10 MiB 元数据限制在该读取边界强制检查。候选 URL 只作为受控来源记录，任务 23 前不执行下载。
+- 候选分类完全由确定性规则完成：明确 NCBI raw counts 为 `RAW_COUNTS`，TPM/normalized 为 `NORMALIZED`，FASTQ/SRA/annotation 与不支持后缀为 `UNSUPPORTED`，仅名称含 count 或提交者补充文件为 `UNKNOWN`，不自动放行给 DESeq2。排序固定为 raw、unknown、normalized、unsupported 后按文件名/URL；无可导入候选返回 `GEO_NO_SUPPORTED_COUNTS` 并保留原因。
+- TDD 红灯：新增测试首次因 `ModuleNotFoundError: No module named 'bioagent.geo'` 在收集阶段失败。绿灯：`uv run --offline pytest tests/unit/geo/test_geo_client.py -v -p no:cacheprovider` 为 **9 passed**，全部 HTTP 使用 `httpx.MockTransport` 与明确标记为 synthetic 的本地 SOFT/catalog fixtures；未访问公开 GSE、真实模型或 Key。
+- 相关回归 `uv run --offline pytest tests/unit/geo tests/unit/datasets -q -p no:cacheprovider --basetemp=runs/task22-regression --tb=short` 为 **53 passed**；全仓 Ruff、mypy（57 个源文件）及八项 pre-commit hooks 通过。临时 pre-commit 空缓存因受限网络无法获取 hook 环境，随后使用已有本地 hook 缓存完成门禁；未安装或更新依赖。
+- `git diff --check` 已运行，唯一失败是任务 21 已登记且本次未触碰的 `renv/activate.R` 自动空白改动；任务 22 暂存文件的 `git diff --cached --check` 通过。
+- 任务 22 提交时尚未实现下载、重定向、DNS/TLS、gzip、缓存或资源限制，也未接 API、对话动作、工作台、样本映射、Dataset 导入、统计执行、Skills/MCP、push 或 PR 操作；这些下载边界已在本次任务 23 完成。
+
+## Task 23 受限下载与原始文件发布
+
+- 会话开始已确认任务 22 提交 `0f5988d`、分支 `agent/bio-agent-mvp` 和既有 `renv/activate.R` 未暂存空白改动；后者全程未恢复、格式化、暂存或提交。
+- TDD 红灯：新增测试首次因 `bioagent.geo.download` 与 `bioagent.geo.transport` 尚不存在而收集失败。首次绿化运行遇到 Windows 默认 pytest 临时目录权限错误，改用 worktree 内 `runs/task23-*` basetemp 后得到有效结果。
+- `GeoTransport` 只接受 `www.ncbi.nlm.nih.gov` / `ftp.ncbi.nlm.nih.gov`，将官方 HTTP/FTP 规范化为 HTTPS 443；拒绝 userinfo、非默认端口、片段、跨允许主机重定向、超过 3 跳、私网/loopback/link-local/reserved IPv4/IPv6、DNS rebinding 和 TLS 证书错误。每跳重新解析并把连接绑定到已验证 IP，默认 socket connector 保持 TLS hostname 校验；测试通过注入 resolver/connector，不访问公网。
+- `GeoDownloader` 使用服务器策略限额：单文件 100 MiB、实例累计 300 MiB、gzip 展开 200 MiB、压缩输入 100 MiB、磁盘预留 400 MiB、连接 10 秒、总计 300 秒、最多重试 2 次与 Retry-After 60 秒上限。流式 SHA-256、Content-Length 与实际字节双重检查、取消/超时/429/502/503/504 错误码、共享 2 请求/秒 limiter 均为确定性代码。
+- 下载和 gzip 展开只写独占 UUID `.part`，检查路径边界、符号链接、特殊源文件和已存在目标；成功后 fsync 并以不覆盖的原子 hard-link 发布，失败只清理本次临时文件。哈希不匹配返回 `SOURCE_CHANGED`，损坏/超限 gzip 不发布目标。
+- `GeoClient` 保留任务 22 的 MockTransport 兼容测试，同时允许生产调用方注入同一 `GeoTransport`；没有接 API/UI、样本映射、Dataset 导入、Skills/MCP 或统计执行。
+- 有效定向测试：`tests/unit/geo/test_geo_download.py` + `tests/integration/test_geo_transport.py` + `tests/unit/geo/test_geo_client.py` 为 **35 passed**；任务 22–23 相关回归（含 Dataset parser/validator/API）为 **88 passed**。Ruff、mypy（59 个源文件）和八项 pre-commit hooks 均通过。
+- 未执行真实公网下载；未读取真实模型 Key；未 push、合并或修改旧 Draft PR。下一任务为 24，需先做 22–24 整体复盘。
+
+## Task 24 GEO 样本映射、标准化和共享 Dataset 入口
+
+- 会话开始已确认提交 `c7ba02b`、分支 `agent/bio-agent-mvp` 和既有 `renv/activate.R` 未提交空白改动；后者全程未恢复、格式化、暂存或提交。
+- TDD 红灯：新增 `test_geo_transform.py` 与 `test_geo_repository.py` 首次收集因 `bioagent.geo.transform` / `bioagent.geo.repository` 尚不存在而失败；实现后 GEO 定向测试转绿。
+- `SourceSelection` 保存 source/candidate/raw hash、feature 列、列到 GSM 的一对一映射、分组/比较方向、修订号、UNKNOWN 的 raw-count 确认、排除样本和证据；模型校验 feature 不可兼作样本、两组各至少两个样本且比较方向确定。`selection_hash()` 对原始 hash 与排序后的 JSON 做 SHA-256，样本映射变化必然改变 hash。
+- `transform_selection()` 使用受限 CSV/TSV/TXT（含 gzip）读取，保留前导零 gene ID 和原始字节；拒绝重复 gene、重复/未知 GSM、非整数/负数/TPM/未确认 UNKNOWN，并输出标准 `feature_id` counts 与 `sample_id` metadata。三组数据必须显式选择两组并登记排除样本，不静默删样本或推断归一化 counts。
+- `GeoRepository` 为每份来源建立新的 UUID 受控目录，原始和标准化文件以固定路径原子发布，`source.json`/`metadata.json` 保存候选 URL、确认时间、转换版本、选择及各 SHA-256；读取与缓存命中复算 hash，同 URL 新内容不会覆盖旧 source，旧 revision/hash 返回冲突。
+- 上传路由已委托共享 `DatasetImportService`；上传仍使用 10 MiB、原有解析子进程和 validator，GEO 标准化入口独立使用 100000 行/2000 样本列/30 秒配置，不通过上传 HTTP API 绕过边界。`DatasetRepository` 写入也改为新目录内原子发布。
+- 有效定向回归 `tests/unit/geo tests/unit/datasets tests/integration/api/test_datasets.py`：**84 passed**；完整 Python 回归：**510 passed、1 skipped**（Windows 无目录 symlink 权限）。全仓 Ruff 与 mypy（62 个源文件）通过；八项 pre-commit hooks 在 worktree 内缓存初始化后全部通过。
+- 22–24 整体复盘：GEO 22 的元数据/候选分类、23 的 allow-list/DNS/TLS/下载资源边界、24 的显式样本确认/数据校验/来源 hash 形成串联但独立的边界；UNKNOWN 不会自动放行，下载限额与上传限额未混用，未实现任务 25 API/对话动作、浏览器扩展、Skills/MCP 或多 Agent 编排。
+- `git diff --check` 仅报告既有 `renv/activate.R` 空白改动；本任务文件的 staged diff 将单独执行 `git diff --cached --check`。未读取真实模型 Key、未访问公网 GSE、未 push、合并或修改旧 Draft PR。
+
+## Task 25 GEO 后台任务与对话动作
+
+- 会话在 `agent/bio-agent-mvp` 的既有 worktree 中继续；保留用户已有的 `renv/activate.R` 空白改动，未恢复、格式化、暂存或提交。Task25 实现只覆盖 GEO 后台/API/对话边界，不提前实现任务 26 的界面。
+- 新增 `GeoImportService` 和 `/api/v1/geo` 全部规格端点。source 与 import 状态持久化分离，独立 I/O worker 限制为最多 2 个并发、16 个排队；固定状态转换、幂等 revision、重启/关闭/取消竞态、下载进度节流和失败码均由确定性代码保证。发布 provenance 失败时回收新建 Dataset，避免孤儿数据集。
+- GEO API 经过本地 Host/Origin/CSRF 与请求体边界；普通 workbench 请求仍保持原 32 KiB 限制，GEO mapping 允许 2 MiB 以容纳 2000 个样本列。直接 API 请求创建明确的工作台事件 owner，事件复用现有 seq/EventStore，不把临时路径暴露给客户端。
+- `geo_lookup`/`geo_import` 结构化动作绑定固定工具 schema，严格拒绝额外字段和模型伪造的 `kind`；流式工具调用按 index/id 重组续片。GSE 必须来自当前用户输入且只有一个，首轮多 GSE 会澄清，后续明确选择可继续 discovery；候选必须属于当前会话选择的 source，用户确认后才下载。READY 仅创建等待人工审批的原分析计划，统计 attempts 保持为 0。
+- 定向 GEO service/API（`tests/unit/geo/test_geo_service.py`、`tests/integration/api/test_geo.py`）为 **33 passed**；`tests/integration/api tests/unit/workbench tests/unit/geo` 回归为 **171 passed**。全量 Python 回归为 **547 passed、1 skipped**，跳过项为 Windows 目录 symlink 权限。
+- 全仓 Ruff、`mypy src` 和 8 项 pre-commit hooks 全通过；质量复审覆盖下载/取消线性化、mapping 请求体上限、后台任务关停、发布失败 dataset 补偿、受限 GEO action、事件持久化、恢复策略和错误映射。测试全部使用 Mock/本地 fixture，未访问公开 GEO、未调用真实模型或读取真实 Key，未执行真实 R 工作台验收。Task25 已本地提交，未 push、合并或修改 Draft PR。
+
+## Task 26 候选选择、映射和分组界面
+
+- TDD 红灯先创建 `GeoSourceCard` 与 `SampleMapping` 组件测试；首次 Vitest 因三个 GEO 组件文件尚不存在、Vite 无法 resolve import 而失败，未写生产组件前已记录该预期失败。
+- 新增来源候选卡、下载进度、样本映射和分组组件。候选卡明确显示来源元数据、证据、文件名、已知/未知大小、100 MiB 单文件上限和官方记录；NORMALIZED/UNSUPPORTED 均不可下载，UNKNOWN 必须由用户确认 raw counts。进度只对已知大小计算百分比，取消后显示服务真实终态。
+- 映射区显示矩阵列、GSM、原始 characteristics 与分组，允许改正映射、不自动删除行；要求一对一映射、显式两组、每组至少两个样本，并在提交前展示 numerator 相对 denominator、重复数与排除样本。source revision 或 raw SHA-256 改变时清空确认并要求再次确认；服务错误保留表单编辑并可取消回到候选列表。UNKNOWN 在页面刷新后仍需要在映射提交前再次确认类型。
+- `ChatTimeline` 订阅既有 `geo.source` / `geo.updated` SSE 事件，并通过资源 GET 刷新 source/import 状态；选中含 `geo_source_id` 的对话时也会恢复来源卡，网络重连重放事件不会靠浏览器本地猜测进度。客户端将 revision 与 raw SHA-256 原样提交 selection。
+- 前端验证：`npm --prefix frontend run test -- --run` 为 **12 files / 24 passed**；typecheck、production build 均退出 0。`uv run --offline pytest tests/integration/api tests/unit/workbench tests/unit/geo -q -p no:cacheprovider` 为 **171 passed**；Ruff、mypy 和 8 项 pre-commit hooks 均通过。所有 UI 测试使用 fixture/mock，未访问 GEO 网络、真实模型或 Key。`renv/activate.R` 的既有空白修改保持未暂存、未格式化。
+
+## Task 27 GEO 来源绑定、真实统计端到端与文档
+
+- TDD 红灯先写了参数化 `lfc_shrink=False/True` 的真实 R/GEO synthetic e2e；两种模式都先因 run 缺少 `source/` 副本而失败，随后转绿。模型使用固定 Mock，未访问公开 GEO 或读取真实 Key。
+- `GeoRepository` 将 dataset ID 写入 source provenance；`AnalysisService` 在创建 run 前验证 source/dataset 绑定，并复制 raw、`source.json`、normalized counts/metadata 到受控 run 目录。审批前只生成来源副本和 AWAITING_APPROVAL 索引，`attempts/` 为空。
+- `RunManifest` 增加可选 `source_id` / `source_artifacts`，旧 manifest 默认兼容；`ExecutionController` 在执行、复用和恢复前重新核对来源 payload 与四份副本 SHA-256，篡改、缺失、404、dataset 不匹配均拒绝。来源记录同时进入 `manifest.artifacts`，下载继续只接受系统生成的不透明 artifact ID。
+- 浏览器 `frontend/e2e/geo.spec.ts` 覆盖“分析 GSE → 候选确认 → 样本映射 → 计划审批 → COMPLETED/PASS/下载”；网络全部由本地 Playwright fixture 响应。审批后的 React 状态保留 run 以展示最终 QC/报告。
+- 新增 `docs/geo.md`，并更新 README、架构和安全说明，记录 counts 判断、UNKNOWN、NCBI 来源、资源上限、缓存、provenance 与不执行公网 GSE 的边界。
+- 验证：`uv run --offline pytest tests/e2e/test_geo_workflow.py` 为 **3 passed**；真实 R/回归集合为 **10 passed**（含 `lfc_shrink` 两种路径、API release、恢复重试）；完整 Python 分项为 **540 passed、1 skipped、1 deselected**；R testthat **37 passed**；前端 Vitest **12 files / 24 passed**、typecheck、build、Playwright **2 passed**；Ruff 与 mypy 通过。`scripts/check.ps1` 已执行，但其固定 `runs/check-python` 目录在当前 sandbox 返回 WinError 5，等价分项已用新的可写 basetemp 完成。`renv/activate.R` 哈希保持原有 `A36F28F8…`，未暂存、未提交。
+- 25–27 整体复盘：GEO 下载/转换、对话确认、UI 映射和分析审批仍是分离状态机；来源 hash 与输入 hash 分层记录；旧上传 run 不携带 source 字段仍可读取；未引入 Skills/MCP、多 Agent、公开网络下载或真实模型联调。
+
 ## 下一任务
 
-任务 22：GEO GSE 数据接入，依赖任务 21 已完成的 A 工作台检查点。按 [GEO 计划](../superpowers/plans/2026-09-08-geo.md) 领取单个编号任务；本次不提前实现 Skills/MCP。19–21 整体复盘已完成。
+任务 28：Skills/MCP 扩展，依赖任务 27。按 [扩展计划](../superpowers/plans/2026-09-08-extensions.md) 领取单个编号任务；不要回改 GEO 验收范围。
 
 真实模型 API 仍可由用户后续接入，不等待 Key。Task 15 发布收尾单独保留：推送需前述明确授权，之后核验最新 CI；具体 UI 演示审批获准后补录结果/GIF及手工下载核验。保持 Draft，不直接合并。
 
@@ -416,10 +477,10 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 | 子项目 | 规格 | 计划 | 状态 |
 | --- | --- | --- | --- |
 | A 工作台与模型 | [设计](../superpowers/specs/2026-09-08-workbench-design.md) | [16–21](../superpowers/plans/2026-09-08-workbench.md) | 16–21 已实现 |
-| B GEO 数据接入 | [设计](../superpowers/specs/2026-09-08-geo-design.md) | [22–27](../superpowers/plans/2026-09-08-geo.md) | 文档已编写，依赖 21 |
+| B GEO 数据接入 | [设计](../superpowers/specs/2026-09-08-geo-design.md) | [22–27](../superpowers/plans/2026-09-08-geo.md) | 22–27 已实现 |
 | C Skills/MCP | [设计](../superpowers/specs/2026-09-08-extensions-design.md) | [28–33](../superpowers/plans/2026-09-08-extensions.md) | 文档已编写，依赖 27 |
 
-设计采用 React/TypeScript + FastAPI 同源工作台、REST/SSE 事件、独立对话存储和 turn 队列；API Key 使用系统凭据存储/环境引用，切换模型只影响新轮次。GEO 下载与样本确认保持科学校验及来源 hash；Skill/MCP 不具有替代分析审批的权限。
+设计采用 React/TypeScript + FastAPI 同源工作台、REST/SSE 事件、独立对话存储和 turn 队列；API Key 使用系统凭据存储/环境引用，切换模型只影响新轮次。GEO 下载、样本确认、source/dataset 绑定和 run provenance 已通过 Task27；Skill/MCP 不具有替代分析审批的权限。
 
 规格准备会话仅新增规格/计划并更新进度；基线统计修复为 `0b14036`，其 Python 359 passed/1 skipped、R 37 passed 是此前实际验证结果，不是新功能验收。该会话的文档检查结果在本节记录；任务 16 的实现与测试结果见上文独立记录。
 
@@ -428,12 +489,12 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 ## 新会话启动提示词
 
 ```text
-继续 Bio-Agent 的任务 22。进入既有 .worktrees/bio-agent-mvp，确认
+继续 Bio-Agent 的任务 28。进入既有 .worktrees/bio-agent-mvp，确认
 agent/bio-agent-mvp 分支，按 AGENTS.md 读取设计/计划/进度及 Git 状态。
-随后读取 2026-09-08-geo-design.md 和 2026-09-08-geo.md。
-任务 21 已完成本地 Web、模型配置、启动、浏览器和 A 模块门禁；
-本次只实现任务 22 的 GEO 前置任务，先失败测试，再实现和验收。
-自动模型测试用 Mock，不读取真实 Key；暂不实现 Skills 或 MCP。
-19–21 整体复盘已完成；保持明确人工审批和原统计执行边界。
+随后读取 2026-09-08-extensions-design.md 和 2026-09-08-extensions.md。
+任务 27 已完成 GEO 来源绑定、真实统计端到端与文档；
+本次只实现任务 28 的 Skills/MCP 扩展，先失败测试，再实现和验收，不提前实现任务 29。
+自动模型测试用 Mock，不读取真实 Key；不得提前实现 Skills 或 MCP。
+保持明确人工审批和原统计执行边界；不要提前实现任务 29。
 完成后更新计划/进度并提交，保留旧 PR Draft，不推送、不合并、不新建 worktree。
 ```

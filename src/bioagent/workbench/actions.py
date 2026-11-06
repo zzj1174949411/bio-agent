@@ -26,12 +26,30 @@ class PlanAnalysisAction(_Action):
     goal: str = Field(min_length=1, max_length=4000)
 
 
+class GeoLookupAction(_Action):
+    """A model may name one accession, never a URL or download destination."""
+
+    kind: Literal["geo_lookup"]
+    accession: str = Field(pattern=r"^GSE[1-9][0-9]*$", max_length=32)
+
+
+class GeoImportAction(_Action):
+    """Suggest an already-discovered candidate; the browser confirms the download."""
+
+    kind: Literal["geo_import"]
+    source_id: UUID
+    candidate_id: UUID
+    revision: int = Field(ge=1, strict=True)
+
+
 AssistantAction = Annotated[
-    AnswerAction | ClarifyAction | PlanAnalysisAction,
+    AnswerAction | ClarifyAction | PlanAnalysisAction | GeoLookupAction | GeoImportAction,
     Field(discriminator="kind"),
 ]
 _ACTION_ADAPTER: TypeAdapter[AssistantAction] = TypeAdapter(AssistantAction)
 
 
-def parse_action(value: object) -> AnswerAction | ClarifyAction | PlanAnalysisAction:
+def parse_action(
+    value: object,
+) -> AnswerAction | ClarifyAction | PlanAnalysisAction | GeoLookupAction | GeoImportAction:
     return _ACTION_ADAPTER.validate_python(value)

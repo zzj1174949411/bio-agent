@@ -14,6 +14,7 @@
 - 生成结果表、PCA、样本相关性热图、MA plot、火山图、QC 与 HTML 报告。
 - 分离 SQLite 工作流 checkpoint、API 运行索引与科研 manifest；下载时复核产物 SHA-256。
 - 提供本地 React 工作台：项目/对话、SSE 消息、人工审批、模型 profile、QC/报告和逐个 artifact 下载。
+- 支持从单个 GSE 编号发现 GEO 候选、确认 raw counts、映射样本并把来源副本绑定到分析 manifest。
 - Streamlit 经 HTTP API 展示五个页面，运行历史来自项目存储。
 
 ## 架构
@@ -38,6 +39,8 @@ flowchart TD
 ```
 
 责任边界、恢复策略和证据结构见 [架构说明](docs/architecture.md)。
+
+GEO 接入从候选发现到样本映射都需要用户确认；候选分类、资源上限、来源缓存和 provenance 下载规则见 [GEO 数据接入说明](docs/geo.md)。
 
 ## 科学边界
 

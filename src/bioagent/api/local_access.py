@@ -10,7 +10,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 def is_workbench_path(path: str) -> bool:
     return any(
         path == prefix or path.startswith(prefix + "/")
-        for prefix in ("/api/v1/model-profiles", "/api/v1/workbench")
+        for prefix in ("/api/v1/model-profiles", "/api/v1/workbench", "/api/v1/geo")
     )
 
 
@@ -84,12 +84,18 @@ class LocalAccessMiddleware:
                 return
             # Bound the actual body, including chunked requests. Never log it.
             body = bytearray()
+            path = scope.get("path", "")
+            body_limit = (
+                2 * 1024 * 1024
+                if path == "/api/v1/geo" or path.startswith("/api/v1/geo/")
+                else 32 * 1024
+            )
             while True:
                 message = await receive()
                 if message["type"] == "http.disconnect":
                     return
                 body.extend(message.get("body", b""))
-                if len(body) > 32 * 1024:
+                if len(body) > body_limit:
                     await reject("REQUEST_TOO_LARGE", 413)
                     return
                 if not message.get("more_body", False):

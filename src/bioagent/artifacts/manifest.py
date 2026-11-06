@@ -157,7 +157,18 @@ class RunManifest(_FrozenValidatedModel):
     approvals: tuple[ApprovalRecord, ...] = Field(min_length=1)
     attempts: tuple[AttemptRecord, ...] = Field(min_length=1)
     artifacts: tuple[ArtifactRecord, ...] = Field(default_factory=tuple)
+    source_id: UUID | None = None
+    source_artifacts: tuple[ArtifactRecord, ...] = Field(default_factory=tuple)
     agent_context: AgentContext | None = None
+
+    @field_validator("source_artifacts")
+    @classmethod
+    def source_artifacts_must_be_source_files(
+        cls, value: tuple[ArtifactRecord, ...]
+    ) -> tuple[ArtifactRecord, ...]:
+        if any(not record.relative_path.startswith("source/") for record in value):
+            raise ValueError("source artifacts must live under source/")
+        return value
 
     @field_validator("input_hashes")
     @classmethod
@@ -224,6 +235,12 @@ class RunManifest(_FrozenValidatedModel):
         ]
         if not matching_approvals:
             raise ValueError("manifest plan must have a matching approval")
+        artifact_hashes = {record.relative_path: record.sha256 for record in self.artifacts}
+        for source_record in self.source_artifacts:
+            if artifact_hashes.get(source_record.relative_path) != source_record.sha256:
+                raise ValueError("source artifacts must be registered in artifacts")
+        if self.source_id is not None and not self.source_artifacts:
+            raise ValueError("source runs must register source artifacts")
         return self
 
 

@@ -1,0 +1,22 @@
+{
+  "records": [
+    {
+      "file_name": "GSE12345_raw_counts_GRCh38.tsv.gz",
+      "url": "https://www.ncbi.nlm.nih.gov/geo/download/?type=rnaseq_counts&acc=GSE12345&format=file&file=GSE12345_raw_counts_GRCh38.tsv.gz",
+      "size_bytes": 2048,
+      "evidence": "NCBI-generated RNA-seq raw counts matrix"
+    },
+    {
+      "file_name": "GSE12345_normalized_counts_GRCh38.tsv.gz",
+      "url": "https://www.ncbi.nlm.nih.gov/geo/download/?type=rnaseq_counts&acc=GSE12345&format=file&file=GSE12345_normalized_counts_GRCh38.tsv.gz",
+      "size_bytes": 1024,
+      "evidence": "NCBI-generated RNA-seq normalized counts matrix"
+    },
+    {
+      "file_name": "GSE12345_gene_annotation.tsv.gz",
+      "url": "https://www.ncbi.nlm.nih.gov/geo/download/?type=rnaseq_counts&acc=GSE12345&format=file&file=GSE12345_gene_annotation.tsv.gz",
+      "size_bytes": 512,
+      "evidence": "NCBI-generated human gene annotation table"
+    }
+  ]
+}

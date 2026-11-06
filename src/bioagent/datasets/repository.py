@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -38,22 +40,25 @@ class DatasetRepository:
         dataset_id = str(uuid4())
         dataset_dir = self._resolve_dataset_dir(dataset_id)
         dataset_dir.mkdir()
+        try:
+            counts_path = dataset_dir / f"counts{counts_suffix}"
+            metadata_path = dataset_dir / f"metadata{metadata_suffix}"
+            self._atomic_write_bytes(counts_path, counts_bytes)
+            self._atomic_write_bytes(metadata_path, metadata_bytes)
 
-        counts_path = dataset_dir / f"counts{counts_suffix}"
-        metadata_path = dataset_dir / f"metadata{metadata_suffix}"
-        counts_path.write_bytes(counts_bytes)
-        metadata_path.write_bytes(metadata_bytes)
-
-        record = {
-            "counts_suffix": counts_suffix,
-            "metadata_suffix": metadata_suffix,
-            "counts_sha256": self._file_sha256(counts_path),
-            "metadata_sha256": self._file_sha256(metadata_path),
-        }
-        (dataset_dir / self._METADATA_FILE).write_text(
-            json.dumps(record, sort_keys=True, separators=(",", ":")),
-            encoding="utf-8",
-        )
+            record = {
+                "counts_suffix": counts_suffix,
+                "metadata_suffix": metadata_suffix,
+                "counts_sha256": self._file_sha256(counts_path),
+                "metadata_sha256": self._file_sha256(metadata_path),
+            }
+            self._atomic_write_text(
+                dataset_dir / self._METADATA_FILE,
+                json.dumps(record, sort_keys=True, separators=(",", ":")),
+            )
+        except Exception:
+            shutil.rmtree(dataset_dir, ignore_errors=True)
+            raise
         return dataset_id
 
     def paths(self, dataset_id: str) -> tuple[Path, Path]:
@@ -67,6 +72,20 @@ class DatasetRepository:
             counts_sha256=record["counts_sha256"],
             metadata_sha256=record["metadata_sha256"],
         )
+
+    def remove(self, dataset_id: str) -> None:
+        """Remove a dataset created by a failed multi-store import transaction."""
+        try:
+            parsed_id = UUID(dataset_id)
+        except (AttributeError, TypeError, ValueError) as error:
+            raise ValueError("invalid dataset id") from error
+        if parsed_id.version != 4:
+            raise ValueError("invalid dataset id")
+        dataset_dir = self._root / str(parsed_id)
+        self._ensure_within_root(dataset_dir.resolve())
+        if dataset_dir.is_symlink() or not dataset_dir.is_dir():
+            return
+        shutil.rmtree(dataset_dir)
 
     def _verified_paths(
         self,
@@ -136,6 +155,18 @@ class DatasetRepository:
     def _ensure_within_root(self, path: Path) -> None:
         if self._root not in path.parents:
             raise ValueError("invalid dataset path")
+
+    @staticmethod
+    def _atomic_write_bytes(path: Path, content: bytes) -> None:
+        temporary = path.with_suffix(path.suffix + ".part")
+        temporary.write_bytes(content)
+        os.replace(temporary, path)
+
+    @staticmethod
+    def _atomic_write_text(path: Path, content: str) -> None:
+        temporary = path.with_suffix(path.suffix + ".part")
+        temporary.write_text(content, encoding="utf-8")
+        os.replace(temporary, path)
 
     @staticmethod
     def _file_sha256(path: Path) -> str:

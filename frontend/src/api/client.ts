@@ -1,4 +1,4 @@
-import type { Conversation, Message, ModelProfile, Project, Turn } from "./types";
+import type { Conversation, GeoImportState, GeoSelection, GeoSourceState, Message, ModelProfile, Project, Turn } from "./types";
 import { parseEventBlock, type WorkbenchEvent } from "./events";
 
 type ErrorBody = { detail?: { code?: string } };
@@ -70,6 +70,15 @@ export class ApiClient {
   saveCredential(profileId: string, key: string): Promise<ModelProfile> { return this.request(`/model-profiles/${profileId}/credential`, { method: "PUT", body: JSON.stringify({ key }) }); }
   clearCredential(profileId: string): Promise<ModelProfile> { return this.request(`/model-profiles/${profileId}/credential`, { method: "DELETE" }); }
   probeProfile(profileId: string): Promise<{ ok: boolean; code?: string }> { return this.request(`/model-profiles/${profileId}/test`, { method: "POST", body: "{}" }); }
+  geoSource(sourceId: string): Promise<GeoSourceState> { return this.request(`/geo/sources/${encodeURIComponent(sourceId)}`); }
+  createGeoImport(sourceId: string, candidateId: string, revision: number): Promise<GeoImportState> {
+    return this.request(`/geo/sources/${encodeURIComponent(sourceId)}/imports`, { method: "POST", body: JSON.stringify({ candidate_id: candidateId, revision }) });
+  }
+  geoImport(importId: string): Promise<GeoImportState> { return this.request(`/geo/imports/${encodeURIComponent(importId)}`); }
+  submitGeoSelection(importId: string, selection: GeoSelection): Promise<GeoImportState> {
+    return this.request(`/geo/imports/${encodeURIComponent(importId)}/selection`, { method: "POST", body: JSON.stringify(selection) });
+  }
+  cancelGeoImport(importId: string): Promise<GeoImportState> { return this.request(`/geo/imports/${encodeURIComponent(importId)}/cancel`, { method: "POST", body: "{}" }); }
 
   async *events(conversationId: string, signal?: AbortSignal): AsyncGenerator<WorkbenchEvent> {
     let after = 0; let delay = 250;
