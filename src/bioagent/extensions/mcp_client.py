@@ -7,6 +7,7 @@ import math
 import os
 import signal
 import subprocess
+import sys
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
@@ -169,7 +170,9 @@ class _BoundedStdioTransport:
 
     async def _enter(self) -> tuple[object, object]:
         command = [self._config.executable, *self._config.argv]
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
         self._process = await anyio.open_process(
             command,
             stdin=subprocess.PIPE,

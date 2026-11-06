@@ -18,6 +18,9 @@ POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")
 def run_checks(tmp_path: Path, *, fail_at: int = 0, suite: str = "All"):
     assert SCRIPT.is_file(), "The unified check script must exist"
     assert POWERSHELL, "PowerShell is required to verify the check script"
+    clean_script = tmp_path / "project" / "scripts" / "check.ps1"
+    clean_script.parent.mkdir(parents=True)
+    shutil.copyfile(SCRIPT, clean_script)
     log = tmp_path / "commands.jsonl"
     wrapper = tmp_path / "invoke.ps1"
     # Replace only the external tools: execute the real PowerShell control flow.
@@ -33,7 +36,17 @@ function Record-Command($tool, $arguments) {
         $global:LASTEXITCODE = 23
     }
 }
-function uv { Record-Command 'uv' $args }
+function uv {
+    Record-Command 'uv' $args
+    foreach ($argument in $args) {
+        if ($argument -like '--basetemp=*') {
+            $parent = Split-Path -Parent ($argument -replace '^--basetemp=', '')
+            if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+                throw 'pytest base temp parent is missing in a fresh checkout'
+            }
+        }
+    }
+}
 function Rscript { Record-Command 'Rscript' $args }
 function npm { Record-Command 'npm' $args }
 & $env:BIO_CHECK_SCRIPT -Suite $env:BIO_CHECK_SUITE
@@ -48,7 +61,7 @@ exit $LASTEXITCODE
             **os.environ,
             "BIO_CHECK_LOG": str(log),
             "BIO_CHECK_FAIL_AT": str(fail_at),
-            "BIO_CHECK_SCRIPT": str(SCRIPT),
+            "BIO_CHECK_SCRIPT": str(clean_script),
             "BIO_CHECK_SUITE": suite,
         },
         capture_output=True,
@@ -64,7 +77,7 @@ def test_all_checks_run_from_project_root_in_dependency_order(tmp_path: Path) ->
     result, commands = run_checks(tmp_path)
     assert result.returncode == 0, result.stderr
     assert len(commands) == 14
-    assert all(Path(command["cwd"]) == ROOT for command in commands)
+    assert all(Path(command["cwd"]) == tmp_path / "project" for command in commands)
     arguments = [command["arguments"] for command in commands]
     assert arguments[0] == ["sync", "--frozen", "--dev"]
     assert arguments[1:6] == [

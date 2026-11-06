@@ -18,6 +18,7 @@ function Invoke-Check {
 
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    New-Item -ItemType Directory -Path runs -Force | Out-Null
     Invoke-Check uv @("sync", "--frozen", "--dev")
 
     if ($Suite -eq "All") {
