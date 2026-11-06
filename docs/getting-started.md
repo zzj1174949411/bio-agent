@@ -1,6 +1,8 @@
 # 安装与首次运行
 
-运行环境固定为 Python 3.12、R 4.5.2、Bioconductor 3.22；[renv.lock](../renv.lock) 锁定 DESeq2 1.50.2 等依赖。renv 恢复 R 包，不安装 R 本身。以下命令假定已安装 Git，能访问 GitHub、PyPI、CRAN 和 Bioconductor；首次恢复可能编译依赖，需要较长时间。
+安装 Git、uv、Node.js 22.12+ 和 R 4.5.2，并确保相应命令在 PATH 中。uv 管理 Python 3.12，renv 按锁文件恢复 Bioconductor 3.22 和 DESeq2 1.50.2 等 R 包。首次安装需要访问 GitHub、PyPI、npm、CRAN 和 Bioconductor，R 包可能需要编译。[R 依赖锁文件](../renv.lock)
+
+通过 `git clone` 下载。分析 manifest 会记录 Git 提交，GitHub 的源码 ZIP 缺少这项信息。
 
 ## Windows（PowerShell）
 
@@ -24,22 +26,23 @@ R 包需要源码编译时，安装 [Rtools45](https://cran.r-project.org/bin/wi
 ```powershell
 git clone https://github.com/zzj1174949411/bio-agent.git
 Set-Location bio-agent
-git switch agent/bio-agent-mvp
 uv python install 3.12
-uv sync --frozen --dev
+uv sync --frozen
+npm --prefix frontend ci
+npm --prefix frontend run build
 Rscript -e "renv::restore(prompt = FALSE)"
-Rscript -e 'stopifnot(isTRUE(renv::status()$synchronized))'
-# 可选旧 API 配置：仅无已有 .env 时 Copy-Item .env.example .env
+powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 ```
 
 首次从项目目录运行 Rscript 时，`.Rprofile` 使用提交的 `renv/activate.R` 引导安装项目所需 renv。若自动引导受网络策略阻挡，先按网络错误修复源或代理，再重新执行恢复。不要通过全局更新包来绕过锁文件。
 
-运行 R 的 attempt 目录与仓库根不同，需要将恢复后的库显式传给 API 进程：
+Windows x64 如果在恢复 `RcppArmadillo 15.4.2-1` 时遇到当前 CRAN 二进制不可用，且尚未配置 Rtools45，可从 Posit 的固定日期快照装入同版本二进制，再继续恢复。以下命令在仓库根目录运行。[Posit 二进制包说明](https://packagemanager.posit.co/__docs__/admin/serving-binaries.html)
 
 ```powershell
-$env:R_LIBS = (Rscript -e 'cat(renv::paths$library())' | Select-Object -Last 1).Trim()
-Rscript -e "stopifnot(as.character(getRversion()) == '4.5.2'); library(DESeq2); library(apeglm); cat(as.character(packageVersion('DESeq2')))"
+Rscript -e "f <- file.path(tempdir(), 'RcppArmadillo_15.4.2-1.zip'); download.file('https://packagemanager.posit.co/cran/2026-08-15/bin/windows/contrib/4.5/RcppArmadillo_15.4.2-1.zip', f, mode='wb'); lib <- renv::paths[['library']](); install.packages(f, repos=NULL, type='win.binary', lib=lib); stopifnot(packageDescription('RcppArmadillo', lib.loc=lib, fields='Version') == '15.4.2-1'); renv::restore(prompt=FALSE)"
 ```
+
+启动脚本会检查项目 R 包并把库路径传给分析子进程。端口 8000 已占用时可追加 `-Port 8010`，随后打开对应地址。
 
 ## Linux（Ubuntu 24.04，Bash）
 
@@ -77,28 +80,26 @@ Rscript --version
 cd "$HOME"
 git clone https://github.com/zzj1174949411/bio-agent.git
 cd bio-agent
-git switch agent/bio-agent-mvp
-uv sync --frozen --dev
+uv sync --frozen
+npm --prefix frontend ci
+npm --prefix frontend run build
 Rscript -e 'renv::restore(prompt = FALSE)'
-Rscript -e 'stopifnot(isTRUE(renv::status()$synchronized))'
-# 可选旧 API 配置：仅无已有 .env 时 cp .env.example .env
 export R_LIBS="$(Rscript -e 'cat(renv::paths$library())' | tail -n 1)"
 Rscript -e 'stopifnot(as.character(getRversion()) == "4.5.2"); library(DESeq2); library(apeglm); stopifnot(capabilities("png"))'
+uv run uvicorn bioagent.api.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-## 配置模型与启动
+## 配置模型
 
-正常使用 React 工作台：先执行 `npm --prefix frontend ci` 和 `npm --prefix frontend run build`，启动下面的 API 后打开 http://localhost:8000/。在“设置 → 模型与 API”新增配置，填写名称、接口协议、API Base URL、API Key 和模型 ID，再返回聊天选择使用。支持 OpenAI 兼容 Chat Completions、DeepSeek、Ollama（无需 Key）。页面保存即时生效，对话选择可恢复，不需要编辑 `.env` 或重启；旧配置不会被覆盖。详见 [工作台指南](workbench.md)。
+启动后打开本地工作台，在“设置 → 模型与 API → 新模型”填写名称、接口协议、API Base URL、模型 ID 和自己的 API Key。以 DeepSeek 为例，选择 DeepSeek 协议，Base URL 填 `https://api.deepseek.com`，模型填 `deepseek-flash`。保存后点“探测连接”，再回到聊天输入区选择该模型。OpenAI 兼容服务使用服务商提供的地址与模型，Ollama 的 Key 留空。页面设置即时生效，密钥存入系统凭据库。[本地工作台](http://127.0.0.1:8000/) · [模型配置说明](../README.md#模型与-api-配置)
 
-以下环境配置仅供旧 Streamlit 与无 profile 的 API 使用，也会作为可选只读配置出现在工作台设置中：
-
-保留已有 `.env`，仅首次安装时从示例复制。用编辑器在本地文件设置：
+Linux 桌面可使用已解锁的 Secret Service 或 KWallet。系统凭据库不可用时，可为 DeepSeek 使用本机 `.env`，重启后在工作台选 `Environment / deepseek`。旧 Streamlit 和无 profile 的 API 也使用这组配置。已有 `.env` 时用编辑器更新，首次使用可从示例复制。[环境模板](../.env.example)
 
 ```dotenv
 BIOAGENT_LLM_PROVIDER=deepseek
 BIOAGENT_DEEPSEEK_API_KEY=
 BIOAGENT_DEEPSEEK_BASE_URL=https://api.deepseek.com
-BIOAGENT_DEEPSEEK_MODEL=deepseek-v4-flash
+BIOAGENT_DEEPSEEK_MODEL=deepseek-flash
 ```
 
 Key 填在本地空值处，不要放进命令历史、截图或提交。模型与请求方式参照 [DeepSeek 官方文档](https://api-docs.deepseek.com/)。没有 Key 时可先按 [演示指南](demo.md) 创建固定 Mock Planner 工厂；普通应用不会自动降级为 Mock。
@@ -113,13 +114,7 @@ BIOAGENT_OLLAMA_MODEL=qwen3:8b
 
 该配置不保证所选模型可靠遵循计划 schema；仍需审阅计划。项目自动测试使用 Mock，不下载模型或调用真实服务。
 
-在已设置 PATH 和 `R_LIBS` 的终端、仓库根目录启动 API（Windows 与 Linux 命令相同）：
-
-```text
-uv run uvicorn bioagent.api.app:create_app --factory --reload --host 127.0.0.1 --port 8000
-```
-
-另开终端进入同一仓库启动 UI：
+旧 Streamlit 可在 API 已启动后另开终端运行：
 
 ```text
 uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1 --server.port 8501
@@ -129,11 +124,11 @@ uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1 --server.por
 
 ## 首次分析
 
-1. 在 New Analysis 上传 [counts_deseq2.csv](../tests/fixtures/counts_deseq2.csv) 和 [metadata_deseq2.csv](../tests/fixtures/metadata_deseq2.csv)。counts 第一列为 `feature_id`，metadata 包含唯一的 `sample_id` 和 `condition`。
-2. 描述目标「使用 DESeq2 比较 AD 相对 Control，分组列 condition」。
-3. 在 Plan Review 核对 numerator 为 `AD`、denominator 为 `Control`、alpha 和 shrink 选项，批准当前 revision。
-4. 在 Run Monitor 查看状态；完成后在 Results 审阅 QC、结果表、图与报告。Run History 显示同一项目的历史。
-5. 按 [演示下载流程](demo.md) 下载输入快照、获批计划、结果、报告及 manifest，保留相对路径并核对哈希。下载单独 HTML 时，图表需要其关联文件才能离线显示。
+1. 新建项目和聊天，选择已配置的模型。点输入框“＋ → 导入分析数据”，选择示例 counts 和 metadata。[示例 counts](../tests/fixtures/counts_deseq2.csv) · [示例 metadata](../tests/fixtures/metadata_deseq2.csv)
+2. 发送“使用 DESeq2 比较 AD 相对 Control，分组列 condition”。核对方案中的组别、方向和阈值，确认后批准执行。
+3. 完成后在聊天里打开 QC、结果表、图和报告。需要离线保存时，按演示指南下载关联文件和 manifest。[演示下载流程](demo.md)
+
+只有一份原始 counts 时，可在“＋ → 上传单表达矩阵”指定样本和分组。也可通过 GEO 查找公开矩阵。[单矩阵指南](single-matrix.md) · [GEO 指南](geo.md)
 
 counts 必须是有限、非负、R integer 范围内的整数。样本集合须完全匹配，选定分组列恰好两个水平且每组至少 2 个样本。metadata 的其他列不会自动加入设计。
 
@@ -167,6 +162,7 @@ uv run pre-commit run --all-files
 | UI 提示无法连接 API | 确认 API 终端仍运行、端口和 `BIOAGENT_API_BASE_URL` 一致，恢复服务后刷新 |
 | `/health` 成功而 `/ready` 失败 | 检查本地 Key 配置、Rscript PATH、Git checkout 与运行目录；readiness 不验证真实模型联网 |
 | 创建计划失败 | 确认模型名、凭据、服务可达性与目标范围；无 Key 的演示使用专门 Mock 工厂 |
+| `SECRET_STORE_UNAVAILABLE` | 解锁系统凭据库后重新保存，或用本机 `.env` 的 DeepSeek 环境配置 |
 | R 找不到 DESeq2/apeglm | 在根目录重新恢复 renv，并在启动 API 的同一终端导出 `R_LIBS` |
 | R 包版本不一致 | 检查 `Rscript --version` 与 `renv::status()`；对照当前 attempt 的 `session_info.txt` |
 | 运行失败并返回 `REPORT_FAILED` | 报告与当前运行的身份、计划、QC 或产物证据不一致，或生成/写入失败；保留文件，检查对应 attempt 与 manifest，不将已有统计文件视作完整成功运行 |

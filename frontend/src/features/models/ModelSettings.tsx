@@ -49,7 +49,7 @@ export function ModelSettings({ onSave, profiles = [], selectedProfileId = "", o
     <label>接口协议<select disabled={readOnly || busy} value={provider} onChange={(event) => setProvider(event.target.value)}>
       <option value="openai_compatible">OpenAI 兼容 Chat Completions</option><option value="deepseek">DeepSeek</option><option value="ollama">Ollama</option>
     </select></label>
-    <label>模型 ID<input aria-label="模型" disabled={readOnly || busy} value={model} placeholder={provider === "deepseek" ? "deepseek-chat" : provider === "ollama" ? "qwen3:8b" : "服务商提供的模型 ID"} onChange={(event) => setModel(event.target.value)} /></label>
+    <label>模型 ID<input aria-label="模型" disabled={readOnly || busy} value={model} placeholder={provider === "deepseek" ? "deepseek-flash" : provider === "ollama" ? "qwen3:8b" : "服务商提供的模型 ID"} onChange={(event) => setModel(event.target.value)} /></label>
     <label>API Base URL<input disabled={readOnly || busy} value={baseUrl} placeholder={provider === "deepseek" ? "https://api.deepseek.com" : provider === "ollama" ? "http://localhost:11434" : "https://your-provider.example/v1"} onChange={(event) => setBaseUrl(event.target.value)} /></label>
     <label>API Key<input aria-label="API Key" disabled={readOnly || busy || provider === "ollama"} type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" /></label>
     <p className="hint">{provider === "ollama" ? "Ollama 不需要 API Key，请先在本机启动服务并安装模型。" : selected?.credential_configured ? "凭据已保存在系统凭据库；留空保留现有 Key。" : "请输入服务商的 API Key，密钥只发送至后端系统凭据库。"}</p>

@@ -12,7 +12,7 @@ npm --prefix frontend ci
 npm --prefix frontend run build
 ```
 
-确认本机已安装 Node 22.12+、uv、Rscript 和 R/renv 后，在仓库根目录运行：
+完成 Git 克隆和 renv 恢复后，在仓库根目录运行。启动脚本会在每个新终端检查并传递项目 R 库路径。[安装与首次运行](getting-started.md)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
@@ -23,6 +23,7 @@ powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 开发时需要 React 热更新，可在两个终端分别运行：
 
 ```powershell
+$env:R_LIBS = (Rscript -e 'cat(renv::paths$library())' | Select-Object -Last 1).Trim()
 uv run uvicorn bioagent.api.app:create_app --factory --host 127.0.0.1 --port 8000
 npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
 ```

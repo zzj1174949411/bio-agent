@@ -25,7 +25,7 @@ Python统一通过`uv --cache-dir data/task46/uv-cache run --offline --no-sync`�
 
 以下为第一轮原型的历史证据。用户未接受两种工作台布局，当前方案以文末“审阅迭代”及更新后的规格为准，不将历史通过误写为设计获批。
 
-本聊天持久目录：`[local path omitted]`。原型`expression-workbench.html`、本地预览`expression-workbench-preview.html`、检查脚本`verify-expression-workbench.mjs`与`expression-workbench-checks.json`。
+本地原型产物包括 `expression-workbench.html`、`expression-workbench-preview.html`、`verify-expression-workbench.mjs` 和 `expression-workbench-checks.json`。
 
 `render.py`退出0；`node verify-expression-workbench.mjs`最终退出0，14项交互检查通过，无pageerror。390px浏览器中的内容视口358px、scrollWidth358px；已查看desktop/source/chat/mobile截图。中途演示问答提交后未显示，改为本地按钮事件并限制无关change重绘；保存状态增加revision以避免旧状态回写，不据此宣称已确定单一根因。本地预览首次覆盖忘记`--force`退出2，随后使用正确命令重建；这些中间失败不作为最终通过结果。
 

@@ -8,14 +8,14 @@
 
 ## 核心能力
 
-- 校验 CSV/TSV 原始 counts 和 metadata，明确返回错误、警告与自动重排记录。
+- 上传一份原始 counts 矩阵，在聊天里确认样本和分组，自动生成 metadata。也支持成对上传 counts 和 metadata。
 - 以 Pydantic 约束分析计划；审批绑定计划版本与哈希，修改比较或阈值后重新审批。
 - 单个 LangGraph 编排器配合本地单 worker，调用固定 R 入口完成 DESeq2。
 - 生成结果表、PCA、样本相关性热图、MA plot、火山图、QC 与 HTML 报告。
 - 分离 SQLite 工作流 checkpoint、API 运行索引与科研 manifest；下载时复核产物 SHA-256。
 - 提供本地 React 工作台：项目/对话、SSE 消息、人工审批、模型 profile、QC/报告和逐个 artifact 下载。
 - 支持按关键词、物种、组织和测序技术搜索 GEO GSE 候选；分页候选必须由用户选择后才检查文件、确认 raw counts 和映射样本。也保留直接输入明确 GSE 编号的路径。
-- 搜索 provenance（search ID、查询/证据 hash、选择 revision 和 accession）会沿 source/dataset 绑定写入分析 manifest；未来 RAG 使用独立的 `KnowledgeRetriever`，当前默认明确返回 `RAG_NOT_CONFIGURED`。
+- 将 GEO 来源和搜索证据写入分析 manifest。可选本地知识库支持 PDF 解析、索引、检索和带来源的问答，按需安装。[知识库准备指南](docs/knowledge-ingestion.md)
 - 支持本地 Skills 说明、MCP stdio/Streamable HTTP 工具目录、权限策略和一次性人工调用批准；扩展返回不是统计证据。
 - Streamlit 经 HTTP API 展示五个页面，运行历史来自项目存储。
 
@@ -23,7 +23,7 @@
 
 ```mermaid
 flowchart TD
-    UI[Streamlit] --> API[FastAPI]
+    UI[React 工作台 / Streamlit] --> API[FastAPI]
     API --> JOB[本地单 worker]
     API --> GRAPH[LangGraph]
     JOB --> GRAPH
@@ -60,38 +60,39 @@ MVP 只接受已计数的 bulk RNA-seq 数据，选定分组列必须恰好有�
 
 ## 快速开始
 
-先按 [Windows / Linux 安装指南](docs/getting-started.md) 安装 uv、Node 22.12+、Python 3.12、R 4.5.2 并恢复 renv。构建并启动本地 Web 工作台的完整说明见 [工作台指南](docs/workbench.md)。以下命令在仓库根目录的 PowerShell 中执行：
+先安装 Git、uv、Node.js 22.12+ 和 R 4.5.2，并确认 `Rscript` 在 PATH 中。用 Git 克隆项目，分析记录需要 checkout 的提交信息。Windows PowerShell 命令如下，Linux 用户可按安装指南操作。[Windows / Linux 安装指南](docs/getting-started.md)
 
 ```powershell
-uv sync --frozen --dev
+git clone https://github.com/zzj1174949411/bio-agent.git
+Set-Location bio-agent
+uv python install 3.12
+uv sync --frozen
 npm --prefix frontend ci
 npm --prefix frontend run build
 Rscript -e "renv::restore(prompt = FALSE)"
-Copy-Item .env.example .env
-$env:R_LIBS = (Rscript -e 'cat(renv::paths$library())' | Select-Object -Last 1).Trim()
-uv run uvicorn bioagent.api.app:create_app --factory --reload --host 127.0.0.1
+powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 ```
 
-启动后在 React 工作台的“设置 → 模型与 API”保存配置，再在聊天输入区选择使用；不需要 `.env` 或重启。无账户联调时可以使用 [Mock 演示工厂](docs/demo.md)。扩展设置和本地只读 MCP fixture 不要求模型 Key。已有 `.env` 时保留自己的配置，不重复复制。另开一个终端，在同一仓库运行：
-
-```powershell
-uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1
-```
-
-打开 [React 工作台](http://localhost:8000/)、[旧 Streamlit 界面](http://localhost:8501) 或 [OpenAPI 文档](http://localhost:8000/docs)。`/health` 表示进程在线；`/ready` 检查依赖初始化，不等于真实模型请求或完整 DESeq2 分析已通过。
+打开工作台，在“设置 → 模型与 API”配置自己的模型，然后在聊天输入区选择它。可用仓库中的示例 counts 试跑，或用 GEO 搜索公开矩阵。[本地工作台](http://127.0.0.1:8000/) · [首次分析](docs/getting-started.md#首次分析) · [无需密钥的演示](docs/demo.md)
 
 ## 模型与 API 配置
 
-当前交付先使用 Mock Planner 验证完整本地流程，真实模型 API 联调由用户后续进行，不是本阶段的阻塞项。无需 Key 的启动步骤见 [Mock 演示指南](docs/demo.md)；接入真实模型时使用下面的配置。
+在“已保存模型”下选“新模型”，填名称和下表对应的设置，再点“保存模型”。保存后可以点“探测连接”，随后返回聊天选择该模型。远程 API 使用者各自提供服务商颁发的密钥，页面将密钥保存到运行应用的系统凭据库。
 
-React 工作台支持页面配置 OpenAI 兼容 Chat Completions、DeepSeek 和 Ollama，密钥保存在系统凭据库，每个对话记忆自己的选择；聊天及上传/GEO 规划绑定同一轮配置快照。详见 [模型设置流程](docs/workbench.md#工作流)。下面的环境变量与 [.env.example](.env.example) 仅为旧 Streamlit/无 profile API 的可选兼容配置，不是工作台必填项。
+| 接口协议 | API Base URL | 模型 ID | API Key |
+| --- | --- | --- | --- |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-flash` | 你的 DeepSeek Key |
+| OpenAI 兼容 Chat Completions | 服务商提供的 API 根地址，通常以 `/v1` 结尾 | 服务商提供的 ID | 你的服务商 Key |
+| Ollama | `http://localhost:11434` | 已下载的本地模型，例如 `qwen3:8b` | 留空 |
+
+页面配置即时生效。没有可用的系统凭据库时，可使用本机 `.env` 的 DeepSeek 环境配置。旧 Streamlit 与无模型配置的 API 也使用环境配置，修改后需重启服务。[模型与凭据配置](docs/getting-started.md#配置模型) · [DeepSeek 模型列表](https://api-docs.deepseek.com/api/list-models/) · [Ollama 快速开始](https://docs.ollama.com/quickstart)
 
 | 配置 | 默认值 / 用途 |
 | --- | --- |
 | `BIOAGENT_LLM_PROVIDER` | `deepseek`；可改为 `ollama` |
 | `BIOAGENT_DEEPSEEK_API_KEY` | 仅在本地填写，不进入 Git |
 | `BIOAGENT_DEEPSEEK_BASE_URL` | `https://api.deepseek.com` |
-| `BIOAGENT_DEEPSEEK_MODEL` | `deepseek-v4-flash` |
+| `BIOAGENT_DEEPSEEK_MODEL` | 示例配置为 `deepseek-flash` |
 | `BIOAGENT_OLLAMA_BASE_URL` | `http://localhost:11434` |
 | `BIOAGENT_OLLAMA_MODEL` | `qwen3:8b` |
 | `BIOAGENT_API_BASE_URL` | UI 请求的 API 地址，默认 `http://localhost:8000` |

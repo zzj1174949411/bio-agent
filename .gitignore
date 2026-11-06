@@ -14,6 +14,14 @@ runs/
 data/
 checkpoints.sqlite*
 workbench.sqlite*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.Renviron
+.Rhistory
+.RData
+.streamlit/secrets.toml
 .Rproj.user/
 renv/library/
 docs/assets/raw/

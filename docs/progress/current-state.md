@@ -1,16 +1,18 @@
 # Bio-Agent 当前状态
 
-**最后更新：** 2026-10-28
+**最后更新：** 2026-11-06
 
 **当前分支：** `agent/bio-agent-mvp`
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task51科研深化已完成真实10模型、质量/年龄/PMI敏感性、官方注释/Reactome及独立科学与产物验收，最终八hooks/cached门禁通过，本地提交以Git日志为准。用户明确选择该研究扩展并要求细节自行判断；不改变生产MVP统计范围。原48–50数据/模型/run全部保留，本轮无新增模型调用/Key/旧额度或依赖升级。成果在ignored data/task51/research-20261028，父是唯一提交者；不自动新增52。
+**当前阶段：** Task 52 整理可共享安装和个人 API 配置。发布提交从既有远端 `main` 接续，携带审查后的源码快照。开发分支保留完整本地历史。使用 Git 克隆、恢复锁定依赖，再在工作台设置自己的模型。Task 51 科研成果仍位于本机忽略目录，分析和审计细节见下文。
 
 **任务44历史验收：** 44实现46a0b59、故障修复3a27695、初评记录7e6eb58；父会话新跑35项聚焦回归及真实本地链路通过，复核真实三组三十题与台账。原预算共49/50次、584607输入bytes，RAG10完成、Wiki9完成/1失败、hybrid10完成；混合未显示稳定优势且更慢，继续保留RAG默认。正式专家盲评仍HUMAN_BLIND_REVIEW_PENDING，不能宣称准确率提升或历史MODEL_UNAVAILABLE唯一根因已确定。真实GEO公网验收与Task15发布收尾独立保留。
 
 ## 恢复工作时先做什么
+
+**Task 52 发布准备已验收。** Git 克隆后可按安装指南恢复锁定依赖、启动工作台并设置个人模型。独立 Windows 首启和真实 R 审批链路通过，详细门禁、R 仓库标签差异和安全扫描范围见 [发布验收](../reviews/2026-11-06-task52-release.md)。远端 `main` 的实际发布提交及 CI 以 GitHub 为准。后续共享以发布分支为基础，本地旧开发提交保存原始历史。
 
 **2026-10-23 验收收尾：** 用户授权逐项完成、父窗口检查，并明确要求增加并行聊天。三路按文件互斥修复，父窗口是唯一Git索引/提交者；现均已停写。48/49父验收完成，已达到本轮批准的表达矩阵链路，收尾提交后删除bio-agent自动跟进。保留renv、旧49/50台账、用户8000与根runs，不自动新增编号。
 
@@ -91,7 +93,7 @@
 - 以下首轮布局和14项检查作为历史记录保留，不能视为用户已接受；正式方向以上述反馈和更新后的规格/计划为准。
 - 用户最初要求全流程，随后明确从表达矩阵开始、不做FASTQ比对/定量，并要求先设计和看原型。试作的FASTQ模块/测试/旧文档已撤回；现有生产API、R、React没有本聊天新增实现。Task45工作区文件、renv和根runs保留。
 - 设计见`docs/superpowers/specs/2026-10-22-expression-workbench-design.md`，唯一任务计划见`docs/superpowers/plans/2026-10-22-expression-prototype.md`。两种布局“分析工作台”和“对话工作台”共用上传矩阵/查找公开矩阵、样本确认、方案批准、模拟运行和结果工作区。Raw counts与TPM/log分支明确区分；后者只演示探索分析，不进入DESeq2。
-- 原型位于本聊天持久目录`[local path omitted]`。本地render退出0，Chromium检查脚本`verify-expression-workbench.mjs`最终退出0：14项交互检查通过、pageErrors=[]。390px浏览器内容视口358px、scrollWidth358px；已查看桌面、来源选择、对话布局与窄屏截图。所有研究、矩阵、图表和问答都是合成演示，无下载、Key或真实计算。
+- 原型文件名为 `expression-workbench.html`。本地render退出0，Chromium检查脚本`verify-expression-workbench.mjs`最终退出0：14项交互检查通过、pageErrors=[]。390px浏览器内容视口358px、scrollWidth358px；已查看桌面、来源选择、对话布局与窄屏截图。所有研究、矩阵、图表和问答都是合成演示，无下载、Key或真实计算。
 - 中间原型缺陷和修复见计划记录；曾忘记render的`--force`导致退出2，纠正后重建成功。未运行无关生产统计/模型测试。下一步先收集用户对原型布局和操作的反馈，再写矩阵入口/自动metadata的正式实施计划；不自动启动FASTQ或新增统计方法。文档hooks、cached检查和提交结果以本任务Git收尾为准。
 - 收尾仅暂存设计、原型计划和本进度三个文件。`pre-commit run --all-files`八项hooks全部通过；默认缓存SQLite只读失败属于环境问题，已使用授权本地执行取得真实通过结果。`git diff --cached --check`退出0，提交号以Git为准；保留Task45与renv未提交状态，不push/merge。
 
@@ -332,7 +334,7 @@
 - 提交前完整回归 `uv run pytest -v -p no:cacheprovider`：44 passed，0 warnings。
 - 提交前 `uv run ruff check .`：All checks passed；`git diff --check` 退出码为 0。
 - 独立代码审查复核：4 个 Important 全部关闭，无 Critical、Important 或 Minor，结论为可以提交。
-- 当前 shell 仍需使用 `[local path omitted]` 绝对路径；沙盒内将 `UV_CACHE_DIR` 指向任务专用临时目录以避开全局缓存 ACL。
+- 当 shell 无法从 PATH 找到 uv 时，使用安装位置的完整路径。沙盒内使用任务专用缓存目录。
 - Task 3.1 重复 metadata 列红灯：selected factor 重复触发 pandas `ValueError: The truth value of a Series is ambiguous`，非 factor 列重复未产生 FAIL；修复后的参数化测试 2 passed。
 - Task 3.1 文件完整性红灯：测试收集因缺少 `DatasetIntegrityError` 失败；加入读取时 SHA-256 复核后 repository 测试 9 passed。
 - Task 3.1 QC 一致性红灯：4 种 status/issues 不一致输入均未抛异常，且构造后可改写 status；加入聚合 validator 与冻结结构后，又由独立审查发现 `model_copy(update=...)` 绕过，补充 2 个 RED 测试并强制复制路径重新校验。合法复制的 serializer warning 与 shallow/deep 语义也以 RED 测试复现并修复；domain 测试最终 11 passed。
