@@ -70,8 +70,11 @@ class PlanningDatasetSummary(BaseModel):
 class AnalysisPlanner:
     """Generate one schema-constrained plan and validate it against trusted metadata."""
 
-    def __init__(self, model: BaseChatModel) -> None:
+    def __init__(
+        self, model: BaseChatModel, *, structured_method: str = "function_calling"
+    ) -> None:
         self._model = model
+        self._structured_method = structured_method
 
     def plan(
         self,
@@ -89,7 +92,7 @@ class AnalysisPlanner:
         # DeepSeek Chat Completions supports tool calls, but not the client's
         # default response_format=json_schema. Validate tool arguments locally.
         structured_model = self._model.with_structured_output(
-            AnalysisPlan, method="function_calling"
+            AnalysisPlan, method=self._structured_method
         )
 
         try:

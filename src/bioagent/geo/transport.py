@@ -15,7 +15,9 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
-ALLOWED_GEO_HOSTS = frozenset({"www.ncbi.nlm.nih.gov", "ftp.ncbi.nlm.nih.gov"})
+ALLOWED_GEO_HOSTS = frozenset(
+    {"www.ncbi.nlm.nih.gov", "ftp.ncbi.nlm.nih.gov", "eutils.ncbi.nlm.nih.gov"}
+)
 _DEFAULT_PORT = 443
 _MAX_REDIRECTS = 3
 

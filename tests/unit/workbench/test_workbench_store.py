@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from bioagent.config import Settings
-from bioagent.workbench.models import TurnStatus
+from bioagent.workbench.models import TurnStatus, WorkbenchError
 from bioagent.workbench.store import WorkbenchStore
 
 
@@ -34,6 +34,20 @@ def test_request_is_idempotent_after_reopen(tmp_path):
         events = reopened.list_events(chat.id)
         assert len(events) == 1
         assert events[0].payload["message_id"] == str(reopened.list_messages(chat.id).items[0].id)
+
+
+def test_conversation_owner_binding_is_durable_and_rejects_another_browser(tmp_path):
+    path = tmp_path / "workbench.sqlite"
+    owner = "a" * 64
+    with WorkbenchStore(path) as store:
+        chat = make_chat(store)
+        store.bind_conversation_owner(chat.id, owner)
+        assert store.owns_conversation(chat.id, owner)
+        assert not store.owns_conversation(chat.id, "b" * 64)
+        with pytest.raises(WorkbenchError, match="CONVERSATION_OWNER_CONFLICT"):
+            store.bind_conversation_owner(chat.id, "b" * 64)
+    with WorkbenchStore(path) as reopened:
+        assert reopened.owns_conversation(chat.id, owner)
 
 
 @pytest.mark.parametrize("same_request", [True, False])

@@ -14,7 +14,8 @@
 - 生成结果表、PCA、样本相关性热图、MA plot、火山图、QC 与 HTML 报告。
 - 分离 SQLite 工作流 checkpoint、API 运行索引与科研 manifest；下载时复核产物 SHA-256。
 - 提供本地 React 工作台：项目/对话、SSE 消息、人工审批、模型 profile、QC/报告和逐个 artifact 下载。
-- 支持从单个 GSE 编号发现 GEO 候选、确认 raw counts、映射样本并把来源副本绑定到分析 manifest。
+- 支持按关键词、物种、组织和测序技术搜索 GEO GSE 候选；分页候选必须由用户选择后才检查文件、确认 raw counts 和映射样本。也保留直接输入明确 GSE 编号的路径。
+- 搜索 provenance（search ID、查询/证据 hash、选择 revision 和 accession）会沿 source/dataset 绑定写入分析 manifest；未来 RAG 使用独立的 `KnowledgeRetriever`，当前默认明确返回 `RAG_NOT_CONFIGURED`。
 - 支持本地 Skills 说明、MCP stdio/Streamable HTTP 工具目录、权限策略和一次性人工调用批准；扩展返回不是统计证据。
 - Streamlit 经 HTTP API 展示五个页面，运行历史来自项目存储。
 
@@ -41,7 +42,7 @@ flowchart TD
 
 责任边界、恢复策略和证据结构见 [架构说明](docs/architecture.md)。
 
-GEO 接入从候选发现到样本映射都需要用户确认；候选分类、资源上限、来源缓存和 provenance 下载规则见 [GEO 数据接入说明](docs/geo.md)。
+GEO 接入从关键词搜索或直接 GSE 到样本映射都需要用户确认；候选分类、分页、资源上限、来源缓存和 provenance 下载规则见 [GEO 数据接入说明](docs/geo.md)。搜索标题和摘要是不可信数据，不能作为 raw counts、统计结果或执行指令。
 
 Skills 与 MCP 仅作为已有单 Agent 工作台的受控扩展，配置、权限、重启恢复和本地只读 fixture 见 [扩展指南](docs/extensions.md)。
 
@@ -71,7 +72,7 @@ $env:R_LIBS = (Rscript -e 'cat(renv::paths$library())' | Select-Object -Last 1).
 uv run uvicorn bioagent.api.app:create_app --factory --reload --host 127.0.0.1
 ```
 
-启动 API 前，在本地 `.env` 配置模型；没有 Key 时使用 [Mock 演示工厂](docs/demo.md)。扩展设置和本地只读 MCP fixture 不要求模型 Key。已有 `.env` 时保留自己的配置，不重复复制。另开一个终端，在同一仓库运行：
+启动后在 React 工作台的“设置 → 模型与 API”保存配置，再在聊天输入区选择使用；不需要 `.env` 或重启。无账户联调时可以使用 [Mock 演示工厂](docs/demo.md)。扩展设置和本地只读 MCP fixture 不要求模型 Key。已有 `.env` 时保留自己的配置，不重复复制。另开一个终端，在同一仓库运行：
 
 ```powershell
 uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1
@@ -79,11 +80,11 @@ uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1
 
 打开 [React 工作台](http://localhost:8000/)、[旧 Streamlit 界面](http://localhost:8501) 或 [OpenAPI 文档](http://localhost:8000/docs)。`/health` 表示进程在线；`/ready` 检查依赖初始化，不等于真实模型请求或完整 DESeq2 分析已通过。
 
-## DeepSeek / Ollama 配置
+## 模型与 API 配置
 
 当前交付先使用 Mock Planner 验证完整本地流程，真实模型 API 联调由用户后续进行，不是本阶段的阻塞项。无需 Key 的启动步骤见 [Mock 演示指南](docs/demo.md)；接入真实模型时使用下面的配置。
 
-配置从环境变量或仓库根目录 `.env` 加载，示例在 [.env.example](.env.example)。
+React 工作台支持页面配置 OpenAI 兼容 Chat Completions、DeepSeek 和 Ollama，密钥保存在系统凭据库，每个对话记忆自己的选择；聊天及上传/GEO 规划绑定同一轮配置快照。详见 [模型设置流程](docs/workbench.md#工作流)。下面的环境变量与 [.env.example](.env.example) 仅为旧 Streamlit/无 profile API 的可选兼容配置，不是工作台必填项。
 
 | 配置 | 默认值 / 用途 |
 | --- | --- |
@@ -95,7 +96,7 @@ uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1
 | `BIOAGENT_OLLAMA_MODEL` | `qwen3:8b` |
 | `BIOAGENT_API_BASE_URL` | UI 请求的 API 地址，默认 `http://localhost:8000` |
 
-DeepSeek 通过 OpenAI 兼容客户端接入，当前工厂固定 60 秒超时、最多 2 次客户端重试；规划器显式使用 function calling 返回计划，DeepSeek 请求关闭思考模式以支持强制选择计划工具，返回参数仍由本地 schema 和数据语义校验。计划 schema 校验失败最多修正 1 次。模型名称和服务能力以 [DeepSeek 官方文档](https://api-docs.deepseek.com/) 为准。Ollama 需自行安装服务和下载对应模型，见 [官方快速开始](https://docs.ollama.com/quickstart)；接入边界已有 Mock 测试，本地模型行为需单独验收。
+DeepSeek 通过 OpenAI 兼容客户端接入，旧环境工厂固定 60 秒超时、最多 2 次客户端重试；页面配置适配器不做客户端自动重试；规划器显式使用 function calling 返回计划，DeepSeek 请求关闭思考模式以支持强制选择计划工具，返回参数仍由本地 schema 和数据语义校验。计划 schema 校验失败最多修正 1 次。模型名称和服务能力以 [DeepSeek 官方文档](https://api-docs.deepseek.com/) 为准。Ollama 需自行安装服务和下载对应模型，见 [官方快速开始](https://docs.ollama.com/quickstart)；接入边界已有 Mock 测试，本地模型行为需单独验收。
 
 默认 API 使用确定性报告；报告模块的可选 LLM 叙述器未默认启用。外部模型只接收目标和受约束数据摘要，不接收完整 counts，但目标和组名仍可能包含敏感信息。
 

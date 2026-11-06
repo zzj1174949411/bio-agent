@@ -12,7 +12,9 @@ Bio-Agent MVP 面向本地单用户科研演示。当前没有身份认证、用
 - Dataset/run ID 映射到受控目录；路径检查拒绝越界、路径穿越和 Windows 特殊路径别名。下载仅通过系统生成的不透明 artifact ID，并重新核对文件哈希。
 - 上传自由文本视为数据。Planner 获得自然语言目标和受约束摘要，模型输出须通过 schema 与真实数据语义校验，不能用提示词绕过审批。
 
-GEO 来源也经过同一受控路径和哈希边界。只接受单个规范化 GSE 编号，候选 URL 由固定 NCBI 主机 allow-list 和逐跳网络校验决定；模型不能提供下载地址。`UNKNOWN` 文件必须由用户确认 raw counts，且仍需用户确认 feature/sample 列、GSM 映射、分组和比较方向。分析创建前会校验 source 与 dataset 的绑定，并复制 raw、source.json 和 normalized 输入；manifest 登记每份来源副本的 SHA-256，恢复或复用前重新验证。来源或 run 副本损坏会拒绝执行。
+GEO 来源也经过同一受控路径和哈希边界。关键词 catalog 只使用官方 NCBI allow-list；搜索标题、摘要和筛选文本一律当作不可信数据，不能构成下载 URL、Dataset、统计证据或审批。搜索结果必须由用户选择，之后才允许精确 GSE 发现；选择前不创建 import/download 请求。直接 GSE 路径仍受相同的候选确认约束。候选 URL 由固定 NCBI 主机 allow-list 和逐跳网络校验决定；模型不能提供下载地址。`UNKNOWN` 文件必须由用户确认 raw counts，且仍需用户确认 feature/sample 列、GSM 映射、分组和比较方向。分析创建前会校验 source 与 dataset 的绑定，并复制 raw、source.json 和 normalized 输入；manifest 登记每份来源副本的 SHA-256，恢复或复用前重新验证。来源或 run 副本损坏会拒绝执行。
+
+每次 catalog 选择的 search ID、query hash、accession、revision、检索时间和 evidence hash 只在已验证 source 与 manifest 中保存；source 创建和发布都从权威搜索仓库重读 `SELECTING`/`SELECTED` 快照并逐字段比较。读取含 provenance 的 source，以及 Controller 执行、复用和恢复时，也会再次验证持久化 `SELECTED` 快照；因此攻击者即使重算 source/run 副本的 provenance hash，也不能让替换后的字段成为权威值。模型、API 或前端提交的同名字段不被接受。NCBI token、未来 RAG 凭据和其他 credential 不写入 catalog evidence、source、manifest、日志、事件或 checkpoint；`KnowledgeEvidence.source_uri` 只接受无 userinfo、无敏感 query 字段的 HTTPS URI。未来知识库仅能替换独立的 `KnowledgeRetriever`；当前 `NullKnowledgeRetriever` 明确返回 `RAG_NOT_CONFIGURED`，不会把文本接入 Dataset、下载或 DESeq2 审批流程。
 
 ## Skills 与 MCP
 

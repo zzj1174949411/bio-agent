@@ -15,8 +15,19 @@ from uuid import UUID, uuid4
 
 from bioagent.geo.client import GeoDiscoveryError, normalize_accession
 from bioagent.geo.download import DownloadResult, GeoDownloadError
-from bioagent.geo.models import GeoCandidate, GeoImportStatus, GeoSource, SourceSelection
+from bioagent.geo.models import (
+    GeoCandidate,
+    GeoImportStatus,
+    GeoSearchProvenance,
+    GeoSource,
+    SourceSelection,
+)
 from bioagent.geo.repository import GeoRepository, GeoRepositoryError
+from bioagent.geo.search_repository import (
+    GeoSearchRepository,
+    GeoSearchRepositoryError,
+    GeoSearchStatus,
+)
 from bioagent.geo.transform import (
     GeoTransformError,
     MappingPreview,
@@ -90,6 +101,7 @@ class GeoImportService:
         max_queued: int = 16,
         event_sink: Callable[[dict[str, object]], None] | None = None,
         ready_sink: Callable[[dict[str, object]], None] | None = None,
+        search_repository: GeoSearchRepository | None = None,
     ) -> None:
         if max_workers < 1 or max_workers > 2 or max_queued < 1 or max_queued > 16:
             raise ValueError("invalid GEO I/O capacity")
@@ -104,6 +116,7 @@ class GeoImportService:
         self._cancellations: dict[UUID, Event] = {}
         self._event_sink = event_sink
         self._ready_sink = ready_sink
+        self._search_repository = search_repository
         self._last_progress: dict[str, float] = {}
         self._closed = False
         self._recover_interrupted()
@@ -145,8 +158,21 @@ class GeoImportService:
         *,
         conversation_id: str | None = None,
         turn_id: str | None = None,
+        provenance: GeoSearchProvenance | None = None,
     ) -> dict[str, object]:
         normalized = normalize_accession(accession)
+        if provenance is not None:
+            if not isinstance(provenance, GeoSearchProvenance):
+                raise GeoServiceError("GEO_SEARCH_PROVENANCE_INVALID")
+            provenance = GeoSearchProvenance.model_validate(provenance.model_dump(mode="python"))
+            if provenance.selected_accession != normalized:
+                raise GeoServiceError("GEO_SEARCH_PROVENANCE_INVALID")
+            _verify_search_provenance(
+                provenance,
+                self._search_repository,
+                expected_status=GeoSearchStatus.SELECTING,
+                expected_source_id=None,
+            )
         source_id = uuid4()
         state: dict[str, object] = {
             "id": str(source_id),
@@ -156,6 +182,9 @@ class GeoImportService:
             "source": None,
             "error_code": None,
             "context": _context(conversation_id, turn_id),
+            "search_provenance": (
+                None if provenance is None else provenance.model_dump(mode="json")
+            ),
         }
         with self._lock:
             self._write_source(state)
@@ -297,7 +326,8 @@ class GeoImportService:
             state = self.get_import(import_id)
             if state.get("status") != GeoImportStatus.DOWNLOADING.value:
                 return
-            source = _source_model(self.get_source(_state_id(state, "source_id")))
+            source_state = self.get_source(_state_id(state, "source_id"))
+            source = _source_model(source_state)
             candidate = _candidate(source, state["candidate_id"])
             root = (
                 self._repository._root / ".geo-downloads" / str(import_id)
@@ -341,15 +371,35 @@ class GeoImportService:
             state = self.get_import(import_id)
             if state.get("status") != GeoImportStatus.VALIDATING.value:
                 return
-            source = _source_model(self.get_source(_state_id(state, "source_id")))
+            source_state = self.get_source(_state_id(state, "source_id"))
+            source = _source_model(source_state)
             candidate = _candidate(source, state["candidate_id"])
             selection = SourceSelection.model_validate(state["selection"])
             raw_path = Path(str(state["raw_path"]))
+            _search_provenance(
+                source_state,
+                source.accession,
+                self._search_repository,
+                source.id,
+                expected_status=GeoSearchStatus.SELECTED,
+            )
             normalized = transform_selection(raw_path, source, candidate, selection)
             dataset_id = self._datasets.import_geo(normalized)
             try:
                 record = self._repository.publish(
-                    source, candidate, selection, raw_path, normalized, dataset_id=dataset_id
+                    source,
+                    candidate,
+                    selection,
+                    raw_path,
+                    normalized,
+                    dataset_id=dataset_id,
+                    provenance=_search_provenance(
+                    source_state,
+                    source.accession,
+                    self._search_repository,
+                    source.id,
+                    expected_status=GeoSearchStatus.SELECTED,
+                    ),
                 )
             except Exception:
                 self._datasets.discard_dataset(dataset_id)
@@ -531,6 +581,66 @@ def _source_model(state: dict[str, object]) -> GeoSource:
     if not isinstance(source, dict):
         raise GeoServiceError("GEO_SOURCE_NOT_READY")
     return GeoSource.model_validate(source)
+
+
+def _search_provenance(
+    state: dict[str, object],
+    accession: str,
+    search_repository: GeoSearchRepository | None,
+    source_id: UUID,
+    *,
+    expected_status: GeoSearchStatus,
+) -> GeoSearchProvenance | None:
+    value = state.get("search_provenance")
+    if value is None:
+        _verify_search_provenance(
+            None,
+            search_repository,
+            expected_status=expected_status,
+            expected_source_id=source_id,
+        )
+        return None
+    if not isinstance(value, dict):
+        raise GeoServiceError("GEO_SEARCH_PROVENANCE_INVALID")
+    try:
+        provenance = GeoSearchProvenance.model_validate(value)
+    except ValueError as error:
+        raise GeoServiceError("GEO_SEARCH_PROVENANCE_INVALID") from error
+    if provenance.selected_accession != accession:
+        raise GeoServiceError("GEO_SEARCH_PROVENANCE_INVALID")
+    _verify_search_provenance(
+        provenance,
+        search_repository,
+        expected_status=expected_status,
+        expected_source_id=source_id,
+    )
+    return provenance
+
+
+def _verify_search_provenance(
+    provenance: GeoSearchProvenance | None,
+    search_repository: GeoSearchRepository | None,
+    *,
+    expected_status: GeoSearchStatus,
+    expected_source_id: UUID | None,
+) -> None:
+    if search_repository is None:
+        if provenance is not None:
+            raise GeoServiceError("GEO_SEARCH_PROVENANCE_INVALID")
+        return
+    try:
+        if expected_source_id is None:
+            if provenance is None:
+                raise GeoSearchRepositoryError("GEO_SEARCH_PROVENANCE_INVALID")
+            search_repository.verify_provenance(provenance, expected_status=expected_status)
+        else:
+            search_repository.verify_source_provenance(
+                provenance,
+                source_id=expected_source_id,
+                expected_status=expected_status,
+            )
+    except GeoSearchRepositoryError as error:
+        raise GeoServiceError("GEO_SEARCH_PROVENANCE_INVALID") from error
 
 
 def _state_id(state: dict[str, object], key: str) -> str:

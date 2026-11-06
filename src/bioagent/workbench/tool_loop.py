@@ -24,6 +24,7 @@ from bioagent.extensions.store import SkillStore
 from bioagent.workbench.actions import (
     AnswerAction,
     ClarifyAction,
+    DatasetSearchAction,
     GeoImportAction,
     GeoLookupAction,
     LoadSkillAction,
@@ -312,7 +313,13 @@ class ToolLoop:
                                 tuple(outputs), loaded_skills=tuple(loaded_skills), budget=budget
                             )
                         if isinstance(
-                            action, (PlanAnalysisAction, GeoLookupAction, GeoImportAction)
+                            action,
+                            (
+                                PlanAnalysisAction,
+                                DatasetSearchAction,
+                                GeoLookupAction,
+                                GeoImportAction,
+                            ),
                         ):
                             outputs.append(action)
                             return ToolLoopResult(

@@ -7,9 +7,19 @@ from threading import Event, Thread
 from time import sleep
 from uuid import uuid4
 
+import pytest
+
 from bioagent.geo.download import DownloadResult, GeoDownloader
-from bioagent.geo.models import Compression, DataKind, GeoCandidate, GeoSource, SourceSelection
+from bioagent.geo.models import (
+    Compression,
+    DataKind,
+    GeoCandidate,
+    GeoSearchProvenance,
+    GeoSource,
+    SourceSelection,
+)
 from bioagent.geo.repository import GeoRepository, GeoRepositoryError
+from bioagent.geo.search_repository import GeoSearchRecord, GeoSearchRepository, GeoSearchStatus
 from bioagent.geo.service import (
     GeoImportService,
     GeoServiceError,
@@ -17,6 +27,7 @@ from bioagent.geo.service import (
     can_transition,
 )
 from bioagent.geo.transport import GeoTransportError
+from bioagent.retrieval.contracts import DatasetSearchHit, DatasetSearchQuery, EvidenceRef
 from bioagent.workbench.actions import GeoImportAction, GeoLookupAction
 from bioagent.workbench.models import Conversation, Message, Turn, WorkbenchError
 from bioagent.workbench.turns import TurnService
@@ -91,6 +102,175 @@ class _Discovery:
             candidates=(candidate,),
             retrieved_at=datetime.now(UTC),
         )
+
+
+def _search_provenance(search_id, *, evidence_sha256: str = "b" * 64) -> GeoSearchProvenance:
+    return GeoSearchProvenance(
+        search_id=search_id,
+        query_hash=DatasetSearchQuery(text="brain").query_hash,
+        provider="geo",
+        selected_accession="GSE123",
+        selection_revision=3,
+        retrieved_at="2026-09-14T00:00:00Z",
+        evidence_sha256=evidence_sha256,
+    )
+
+
+def _search_snapshot(
+    provenance: GeoSearchProvenance, *, status: GeoSearchStatus
+) -> GeoSearchRecord:
+    query = DatasetSearchQuery(text="brain")
+    selection_is_persisted = status in {GeoSearchStatus.SELECTING, GeoSearchStatus.SELECTED}
+    return GeoSearchRecord(
+        id=provenance.search_id,
+        status=status,
+        revision=(
+            provenance.selection_revision + 1
+            if status is GeoSearchStatus.SELECTED
+            else provenance.selection_revision
+        ),
+        query=query,
+        query_hash=query.query_hash,
+        items=(
+            DatasetSearchHit(
+                provider="geo",
+                source_id=provenance.selected_accession,
+                title="fixture",
+                source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE123",
+                evidence=EvidenceRef(
+                    provider="geo",
+                    source_id=provenance.selected_accession,
+                    source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE123",
+                    retrieved_at=provenance.retrieved_at,
+                    content_sha256="b" * 64,
+                ),
+            ),
+        ),
+        total=1,
+        conversation_id=uuid4(),
+        turn_id=uuid4(),
+        source_id="source-id" if status is GeoSearchStatus.SELECTED else None,
+        selected_accession=(provenance.selected_accession if selection_is_persisted else None),
+        selection_revision=(provenance.selection_revision if selection_is_persisted else None),
+    )
+
+
+def test_create_source_rejects_direct_forged_search_provenance(tmp_path) -> None:
+    search_repository = GeoSearchRepository(tmp_path / "data" / "searches")
+    provenance = _search_provenance(uuid4(), evidence_sha256="c" * 64)
+    search_repository.write(_search_snapshot(provenance, status=GeoSearchStatus.AWAITING_SELECTION))
+    service = GeoImportService(
+        GeoRepository(tmp_path / "sources"),
+        _Discovery(),
+        object(),
+        object(),
+        search_repository=search_repository,
+    )
+
+    with pytest.raises(GeoServiceError, match="^GEO_SEARCH_PROVENANCE_INVALID$"):
+        service.create_source("GSE123", provenance=provenance)
+
+    service.close()
+
+
+def test_validation_rechecks_mutated_source_provenance_before_dataset_publication(
+    tmp_path, monkeypatch
+) -> None:
+    repository = GeoRepository(tmp_path / "sources")
+    search_repository = GeoSearchRepository(tmp_path / "data" / "searches")
+    source_id, candidate_id, import_id = uuid4(), uuid4(), uuid4()
+    authentic = _search_provenance(uuid4())
+    selected = _search_snapshot(authentic, status=GeoSearchStatus.SELECTED)
+    search_repository.write(selected)
+    candidate = GeoCandidate(
+        id=candidate_id,
+        source_id=source_id,
+        accession="GSE123",
+        url="https://www.ncbi.nlm.nih.gov/counts.tsv",
+        file_name="counts.tsv",
+        data_kind=DataKind.RAW_COUNTS,
+        evidence=("fixture",),
+        compression=Compression.NONE,
+    )
+    source = GeoSource(
+        id=source_id,
+        accession="GSE123",
+        candidates=(candidate,),
+        retrieved_at=datetime.now(UTC),
+    )
+    selection = SourceSelection(
+        source_id=source_id,
+        candidate_id=candidate_id,
+        raw_sha256="a" * 64,
+        feature_column="feature_id",
+        sample_columns=("GSM1", "GSM2", "GSM3", "GSM4"),
+        sample_map={name: name for name in ("GSM1", "GSM2", "GSM3", "GSM4")},
+        groups={"GSM1": "AD", "GSM2": "AD", "GSM3": "Control", "GSM4": "Control"},
+        numerator="AD",
+        denominator="Control",
+        revision=1,
+        evidence=("confirmed",),
+    )
+    repository.write_state(
+        "sources",
+        source_id,
+        {
+            "id": str(source_id),
+            "source": source.model_dump(mode="json"),
+            "search_provenance": _search_provenance(
+                authentic.search_id, evidence_sha256="c" * 64
+            ).model_dump(mode="json"),
+        },
+    )
+    repository.write_state(
+        "imports",
+        import_id,
+        {
+            "id": str(import_id),
+            "source_id": str(source_id),
+            "candidate_id": str(candidate_id),
+            "status": "VALIDATING",
+            "raw_path": str(tmp_path / "raw.tsv"),
+            "selection": selection.model_dump(mode="json"),
+        },
+    )
+    (tmp_path / "raw.tsv").write_text("fixture", encoding="utf-8")
+
+    class Datasets:
+        calls = 0
+
+        def import_geo(self, _normalized):
+            self.calls += 1
+            raise AssertionError("must not import a dataset from tampered provenance")
+
+    datasets = Datasets()
+    service = GeoImportService(
+        repository,
+        object(),
+        object(),
+        datasets,
+        search_repository=search_repository,
+    )  # type: ignore[arg-type]
+    repository.write_state(
+        "imports",
+        import_id,
+        {
+            "id": str(import_id),
+            "source_id": str(source_id),
+            "candidate_id": str(candidate_id),
+            "status": "VALIDATING",
+            "raw_path": str(tmp_path / "raw.tsv"),
+            "selection": selection.model_dump(mode="json"),
+        },
+    )
+    monkeypatch.setattr("bioagent.geo.service.transform_selection", lambda *_args: object())
+
+    service._validate_locked(import_id)
+
+    assert datasets.calls == 0
+    assert service.get_import(import_id)["status"] == "FAILED"
+    assert service.get_import(import_id)["error_code"] == "GEO_SEARCH_PROVENANCE_INVALID"
+    service.close()
 
 
 def test_discovery_state_and_event_are_persistent_without_restart_replay(tmp_path) -> None:

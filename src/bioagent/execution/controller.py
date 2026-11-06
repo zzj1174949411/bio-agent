@@ -26,6 +26,12 @@ from bioagent.domain.plans import AnalysisPlan
 from bioagent.domain.qc import QCIssue, QCReport, QCStatus
 from bioagent.domain.runs import RunStatus
 from bioagent.execution.r_runner import RExecutionCancelledError, RRunnerError
+from bioagent.geo.models import GeoSearchProvenance
+from bioagent.geo.search_repository import (
+    GeoSearchRepository,
+    GeoSearchRepositoryError,
+    GeoSearchStatus,
+)
 from bioagent.tools.deseq2 import validate_deseq2_outputs, write_deseq2_parameters
 from bioagent.tools.registry import ToolSpec
 
@@ -107,6 +113,7 @@ class ExecutionController:
         git_commit: str,
         software_versions: Mapping[str, str],
         clock: Callable[[], datetime] | None = None,
+        search_repository: GeoSearchRepository | None = None,
     ) -> None:
         self._project_root = project_root.resolve()
         self._r_runner = r_runner
@@ -116,6 +123,7 @@ class ExecutionController:
         self._git_commit = git_commit
         self._software_versions = dict(software_versions)
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._search_repository = search_repository
 
     def execute(
         self,
@@ -150,14 +158,18 @@ class ExecutionController:
         )
         current_approval = self._approval_record(approval, revision, plan_hash)
         previous_manifest = self._load_manifest(run_id)
+        source_records = self._source_records(run_id, agent_context, plan.dataset_id)
+        search_provenance = self._source_search_provenance(
+            run_id, agent_context, plan.dataset_id
+        )
         self._bind_existing_run(
             previous_manifest,
             run_id,
             plan,
             input_hashes,
             agent_context,
+            search_provenance,
         )
-        source_records = self._source_records(run_id, agent_context, plan.dataset_id)
         if (
             previous_manifest is not None
             and previous_manifest.source_artifacts
@@ -194,6 +206,7 @@ class ExecutionController:
                 snapshot_paths=snapshot_paths,
                 execution_key=execution_key,
                 agent_context=agent_context,
+                search_provenance=search_provenance,
             )
         if reused is not None:
             return reused
@@ -216,6 +229,7 @@ class ExecutionController:
             execution_key=execution_key,
             cancelled=cancelled,
             agent_context=agent_context,
+            search_provenance=search_provenance,
         )
 
     def execution_key(self, state: Mapping[str, object]) -> str:
@@ -228,6 +242,9 @@ class ExecutionController:
             raise ExecutionRejectedError("DATASET_ID_MISMATCH")
         self._dataset_repository.paths(plan.dataset_id)
         dataset_hashes = self._dataset_repository.hashes(plan.dataset_id)
+        agent_context = self._agent_context(state)
+        self._source_records(run_id, agent_context, plan.dataset_id)
+        self._source_search_provenance(run_id, agent_context, plan.dataset_id)
         return calculate_execution_key(
             run_id=run_id,
             plan_hash=plan_hash,
@@ -337,6 +354,7 @@ class ExecutionController:
         execution_key: str,
         cancelled: CancellationCheck | None,
         agent_context: AgentContext | None,
+        search_provenance: GeoSearchProvenance | None,
     ) -> ExecutionResult:
         attempt_id = str(uuid4())
         started_at = self._now()
@@ -397,6 +415,7 @@ class ExecutionController:
                 ),
                 source_records=source_records,
                 agent_context=agent_context,
+                search_provenance=search_provenance,
             )
             return ExecutionResult(
                 attempt_id=attempt_id,
@@ -427,6 +446,7 @@ class ExecutionController:
             artifacts=(*run_records, *source_records, *recovered_artifacts, *attempt_records),
             source_records=source_records,
             agent_context=agent_context,
+            search_provenance=search_provenance,
         )
         return ExecutionResult(
             attempt_id=attempt_id,
@@ -453,6 +473,7 @@ class ExecutionController:
         snapshot_paths: tuple[Path, Path],
         execution_key: str,
         agent_context: AgentContext | None,
+        search_provenance: GeoSearchProvenance | None,
     ) -> ExecutionResult | None:
         if (
             previous is None
@@ -534,6 +555,7 @@ class ExecutionController:
                 ),
                 "source_id": agent_context.source_id if agent_context is not None else None,
                 "source_artifacts": tuple(source_records),
+                "search_provenance": search_provenance,
                 "agent_context": agent_context,
             }
         )
@@ -657,6 +679,7 @@ class ExecutionController:
         artifacts: Sequence[ArtifactRecord],
         source_records: Sequence[ArtifactRecord],
         agent_context: AgentContext | None,
+        search_provenance: GeoSearchProvenance | None,
     ) -> None:
         prior_approvals = previous.approvals if previous is not None else ()
         prior_attempts = previous.attempts if previous is not None else ()
@@ -688,6 +711,7 @@ class ExecutionController:
                 "artifacts": self._merge_artifacts(prior_artifacts, artifacts),
                 "source_id": agent_context.source_id if agent_context is not None else None,
                 "source_artifacts": tuple(source_records),
+                "search_provenance": search_provenance,
                 "agent_context": agent_context,
             }
         )
@@ -736,6 +760,7 @@ class ExecutionController:
         plan: AnalysisPlan,
         input_hashes: Mapping[str, str],
         agent_context: AgentContext | None = None,
+        search_provenance: GeoSearchProvenance | None = None,
     ) -> None:
         if previous is None:
             return
@@ -751,6 +776,8 @@ class ExecutionController:
         current_source_id = agent_context.source_id if agent_context is not None else None
         if previous_source_id != current_source_id:
             raise ExecutionRejectedError("RUN_SOURCE_ID_MISMATCH")
+        if previous.search_provenance != search_provenance:
+            raise ExecutionRejectedError("RUN_SEARCH_PROVENANCE_MISMATCH")
 
     def _source_records(
         self,
@@ -787,6 +814,54 @@ class ExecutionController:
                 raise ExecutionRejectedError("SOURCE_ARTIFACT_TAMPERED")
             records.append(ArtifactRecord(relative_path=artifact_id, sha256=digest))
         return tuple(records)
+
+    def _source_search_provenance(
+        self,
+        run_id: str,
+        agent_context: AgentContext | None,
+        dataset_id: str,
+    ) -> GeoSearchProvenance | None:
+        if agent_context is None or agent_context.source_id is None:
+            return None
+        source_json_path = self._artifact_manager.resolve(run_id, "source/source.json")
+        try:
+            payload = json.loads(source_json_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, Mapping):
+                raise ValueError("source JSON must be an object")
+            if payload.get("source_id") != str(agent_context.source_id):
+                raise ValueError("source ID mismatch")
+            if payload.get("dataset_id") != dataset_id:
+                raise ValueError("dataset ID mismatch")
+            raw = payload.get("search_provenance")
+            digest = payload.get("search_provenance_sha256")
+            if raw is None and digest is None:
+                if self._search_repository is not None:
+                    self._search_repository.verify_source_provenance(
+                        None,
+                        source_id=agent_context.source_id,
+                        expected_status=GeoSearchStatus.SELECTED,
+                    )
+                return None
+            if not isinstance(raw, Mapping) or not isinstance(digest, str):
+                raise ValueError("search provenance shape is invalid")
+            provenance = GeoSearchProvenance.model_validate(raw)
+            if provenance.selected_accession != payload.get("accession"):
+                raise ValueError("search provenance accession mismatch")
+            if provenance.provenance_sha256 != digest:
+                raise ValueError("search provenance hash mismatch")
+            if self._search_repository is None:
+                raise ValueError("search repository is unavailable")
+            try:
+                self._search_repository.verify_provenance(
+                    provenance,
+                    expected_status=GeoSearchStatus.SELECTED,
+                    expected_source_id=agent_context.source_id,
+                )
+            except GeoSearchRepositoryError as error:
+                raise ValueError("search provenance is not authoritatively selected") from error
+            return provenance
+        except (OSError, TypeError, ValueError, ValidationError) as error:
+            raise ExecutionRejectedError("SOURCE_SEARCH_PROVENANCE_TAMPERED") from error
 
     @staticmethod
     def _agent_context(state: Mapping[str, object]) -> AgentContext | None:

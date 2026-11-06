@@ -14,7 +14,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from pydantic import SecretStr
 
 from bioagent.config import Settings
-from bioagent.models.profiles import ModelError, ModelProfile
+from bioagent.models.profiles import ModelError, ModelProfile, ModelSnapshot
 from bioagent.models.secrets import SecretStore
 from bioagent.workbench.models import Page
 from bioagent.workbench.store import WorkbenchStore
@@ -192,12 +192,15 @@ class ModelProfileStore:
                 "credential_error": "SECRET_STORE_UNAVAILABLE",
             }
 
-    def request_config(self, identity: UUID) -> tuple[ModelProfile, SecretStr | None]:
+    def request_config(
+        self, identity: UUID, fixed: ModelSnapshot | None = None
+    ) -> tuple[ModelProfile, SecretStr | None]:
         with self._lock:
             profile = self.get(identity)
             # Ollama does not use the OpenAI credential field or system keyring.
-            secret = None if profile.provider == "ollama" else self._credential(profile)
-            if profile.provider != "ollama" and secret is None:
+            provider = fixed.provider if fixed is not None else profile.provider
+            secret = None if provider == "ollama" else self._credential(profile)
+            if provider != "ollama" and secret is None:
                 raise ModelError("MODEL_NOT_CONFIGURED")
             return profile, secret
 

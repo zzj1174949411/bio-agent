@@ -1,5 +1,5 @@
 export type Project = { id: string; title: string; archived: boolean };
-export type Conversation = Project & { project_id: string; selected_profile_id: string | null; geo_source_id?: string | null };
+export type Conversation = Project & { project_id: string; selected_profile_id: string | null; geo_source_id?: string | null; geo_search_id?: string | null };
 export type Message = { id: string; role: "user" | "assistant"; content: string; partial: boolean; dataset_ids: string[] };
 export type Turn = { id: string; status: string; run_id: string | null; error_code?: string | null; input_revision: number; pending_input: { request_id: string; revision: number; question: string } | null; pending_tool_call?: Record<string, unknown> | null };
 export type ModelProfile = { id: string; label: string; provider: string; model: string; base_url: string; credential_configured: boolean; read_only?: boolean; revision?: number; structured_method?: string; thinking?: string };
@@ -15,6 +15,10 @@ export type GeoSource = { id: string; accession: string; title?: string | null; 
 export type GeoSourceState = { id: string; accession: string; status: string; revision: number; source: GeoSource | null; error_code?: string | null };
 export type GeoMappingPreview = { feature_columns: string[]; sample_columns: string[]; suggested_sample_map: Record<string, string>; raw_sha256?: string; headers?: string[]; unmapped_source_samples?: string[] };
 export type GeoImportState = { id: string; source_id: string; candidate_id: string; revision: number; status: string; dataset_id?: string | null; error_code?: string | null; preview: GeoMappingPreview | null; raw_sha256: string | null; bytes_downloaded?: number; };
+export type DatasetSearchQuery = { text: string; provider: "geo"; organism: string | null; tissue: string | null; technology: string | null; page_token: string | null; page_size: number };
+export type DatasetSearchHit = { provider: "geo"; source_id: string; title: string; summary: string | null; organisms: string[]; platforms: string[]; sample_count: number | null; published_at: string | null; source_uri: string; evidence: { provider: "geo"; source_id: string; source_uri: string; retrieved_at: string; content_sha256: string }; analysis_readiness: "NEEDS_INSPECTION" | "UNSUPPORTED" | "UNKNOWN" };
+export type GeoSearchState = { id: string; status: string; revision: number; query_hash: string; query: DatasetSearchQuery; items: DatasetSearchHit[]; result_count: number; total: number; next_page_token: string | null; source_id: string | null; error_code: string | null };
+export type GeoSearchRequest = Pick<DatasetSearchQuery, "text" | "provider" | "organism" | "tissue" | "technology" | "page_size">;
 export type GeoSelection = { source_id: string; candidate_id: string; raw_sha256: string; feature_column: string; sample_columns: string[]; sample_map: Record<string, string>; groups: Record<string, string>; group_factor: string; numerator: string; denominator: string; revision: number; confirmed_raw_type?: "RAW_COUNTS"; excluded_samples?: string[]; evidence: string[] };
 export type SkillRecord = { id: string; name: string; description: string; root_id: string; relative_path: string; sha256: string; enabled: boolean; requested_tools?: string[] | null };
 export type SkillReference = { relative_path: string; content: string; sha256: string };

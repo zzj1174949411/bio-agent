@@ -10,7 +10,7 @@ from hashlib import sha256
 from pathlib import Path
 from threading import RLock, local
 from typing import Any, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import Request
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -29,7 +29,14 @@ from bioagent.extensions.mcp_client import McpClientAdapter
 from bioagent.extensions.store import SkillStore
 from bioagent.geo.client import GeoClient
 from bioagent.geo.download import GeoDownloader
-from bioagent.geo.repository import GeoRepository
+from bioagent.geo.repository import GeoRepository, GeoRepositoryError
+from bioagent.geo.search import NcbiGeoCatalogProvider
+from bioagent.geo.search_repository import (
+    GeoSearchRepository,
+    GeoSearchRepositoryError,
+    GeoSearchStatus,
+)
+from bioagent.geo.search_service import GeoSearchService
 from bioagent.geo.service import GeoImportService
 from bioagent.geo.transport import GeoTransport
 from bioagent.llm.factory import create_chat_model
@@ -38,12 +45,13 @@ from bioagent.models.adapters import ModelAdapter
 from bioagent.models.secrets import SecretStore, SystemSecretStore
 from bioagent.models.store import ModelProfileStore
 from bioagent.reporting.workflow import ArtifactReporter
+from bioagent.retrieval.knowledge import KnowledgeRetriever, NullKnowledgeRetriever
 from bioagent.services.analysis import AnalysisService
 from bioagent.services.datasets import DatasetImportService
 from bioagent.storage.checkpoint import sqlite_checkpoint
 from bioagent.storage.runs import RunRepository
 from bioagent.tools.registry import ToolRegistry
-from bioagent.workbench.models import TurnStatus
+from bioagent.workbench.models import EventKind, TurnStatus
 from bioagent.workbench.store import WorkbenchStore
 from bioagent.workbench.tool_loop import ToolLoop
 from bioagent.workbench.turns import ChatFactory, ConfiguredChatFactory, TurnService
@@ -100,6 +108,7 @@ class DependencyContainer:
     run_repository: RunRepository
     artifact_manager: ArtifactManager
     graph: Any
+    planning_graph: Callable[[object], Any]
     job_runner: LocalJobRunner
     execution_adapter: ExecutionAdapter
     readiness: ReadinessCheck
@@ -115,7 +124,11 @@ class DependencyContainer:
     model_adapter: ModelAdapter
     workbench: WorkbenchStore
     turn_service: TurnService
+    geo_repository: GeoRepository
+    geo_search_repository: GeoSearchRepository
     geo_service: GeoImportService
+    geo_search_service: GeoSearchService
+    knowledge_retriever: KnowledgeRetriever
     analysis_service: AnalysisService = field(init=False)
     jobs_by_run: dict[str, str] = field(default_factory=dict)
     jobs_lock: RLock = field(default_factory=RLock)
@@ -137,6 +150,7 @@ class DependencyContainer:
         return str(conversation.id), str(turn.id)
 
     def shutdown(self) -> None:
+        self.geo_search_service.close()
         self.geo_service.close()
         self.job_runner.close()
         with self.jobs_lock:
@@ -186,9 +200,7 @@ def build_dependencies(
     factory = cast(
         ChatFactory,
         supplied.get("chat_model_factory")
-        or ConfiguredChatFactory(
-            model_profiles, gateway=gateway, extension_store=extension_store
-        ),
+        or ConfiguredChatFactory(model_profiles, gateway=gateway, extension_store=extension_store),
     )
     turn_service = TurnService(
         workbench,
@@ -211,7 +223,26 @@ def build_dependencies(
         ArtifactManager,
         supplied.get("artifact_manager") or ArtifactManager(settings.runs_dir),
     )
-    _recover_orphaned_api_runs(run_repository, artifact_manager, settings.runs_dir)
+    search_repository_value = supplied.get("geo_search_repository") or GeoSearchRepository(
+        settings.data_dir / "searches"
+    )
+    if not isinstance(search_repository_value, GeoSearchRepository):
+        raise TypeError("geo_search_repository override must be a GeoSearchRepository")
+    search_repository = search_repository_value
+    geo_repository_value = supplied.get("geo_repository") or GeoRepository(
+        settings.data_dir / "sources", search_repository=search_repository
+    )
+    if not isinstance(geo_repository_value, GeoRepository):
+        raise TypeError("geo_repository override must be a GeoRepository")
+    geo_repository = geo_repository_value
+    geo_repository.bind_search_repository(search_repository)
+    _recover_orphaned_api_runs(
+        run_repository,
+        artifact_manager,
+        settings.runs_dir,
+        geo_repository,
+        search_repository,
+    )
 
     planner = supplied.get("planner")
     if planner is None:
@@ -229,27 +260,38 @@ def build_dependencies(
                 project_root=project_root,
                 dataset_repository=dataset_repository,
                 artifact_manager=artifact_manager,
+                search_repository=search_repository,
             )
         except Exception as error:
             errors.append(f"executor: {type(error).__name__}")
             executor = _UnavailableDependency("execution dependency is unavailable")
 
     graph = supplied.get("graph")
+    planning_graph: Callable[[object], Any]
     if graph is None:
         checkpointer = supplied.get("checkpointer")
         if checkpointer is None:
             checkpointer = stack.enter_context(sqlite_checkpoint(settings.checkpoint_db))
         execution_adapter = ExecutionAdapter(executor)
-        graph = build_graph(
-            planner,
-            execution_adapter,
-            cast(BaseCheckpointSaver[Any], checkpointer),
-            reporter=ArtifactReporter(artifact_manager)
-            if isinstance(executor, ExecutionController)
-            else None,
-        )
+
+        def planning_graph(bound_planner: object) -> Any:
+            # Each invocation owns its model dependency. Only JSON state is
+            # checkpointed; approval resume uses the already-persisted plan.
+            return build_graph(
+                bound_planner,
+                execution_adapter,
+                cast(BaseCheckpointSaver[Any], checkpointer),
+                reporter=ArtifactReporter(artifact_manager)
+                if isinstance(executor, ExecutionController)
+                else None,
+            )
+
+        graph = planning_graph(planner)
     else:
         execution_adapter = ExecutionAdapter(executor)
+
+        def planning_graph(bound_planner: object) -> Any:
+            raise RuntimeError("profile planning requires an assembled workflow graph")
 
     job_runner = supplied.get("job_runner")
     if job_runner is None:
@@ -288,10 +330,6 @@ def build_dependencies(
             parse_timeout_seconds=float(timeout_value),
         ),
     )
-    geo_repository_value = supplied.get("geo_repository") or GeoRepository(
-        settings.data_dir / "sources"
-    )
-    geo_repository = cast(GeoRepository, geo_repository_value)
     geo_service = cast(
         GeoImportService,
         supplied.get("geo_service")
@@ -301,7 +339,49 @@ def build_dependencies(
             GeoDownloader(GeoTransport(), root=settings.data_dir / "sources"),
             dataset_import_service,
             event_sink=_workbench_geo_event_sink(workbench),
+            search_repository=search_repository,
         ),
+    )
+
+    def create_search_source(
+        accession: str,
+        conversation_id: str,
+        turn_id: str,
+        provenance: object,
+    ) -> dict[str, object]:
+        from bioagent.geo.models import GeoSearchProvenance
+
+        if not isinstance(provenance, GeoSearchProvenance):
+            raise ValueError("GEO_SEARCH_PROVENANCE_INVALID")
+        source = geo_service.create_source(
+            accession,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            provenance=provenance,
+        )
+        source_id = source.get("id")
+        if not isinstance(source_id, str):
+            return source
+        try:
+            workbench.set_geo_source(conversation_id, UUID(source_id))
+        except (TypeError, ValueError) as error:
+            raise ValueError("GEO_SEARCH_SOURCE_FAILED") from error
+        return source
+
+    geo_search_service = cast(
+        GeoSearchService,
+        supplied.get("geo_search_service")
+        or GeoSearchService(
+            settings.data_dir,
+            NcbiGeoCatalogProvider(GeoTransport(max_redirects=0)),
+            create_search_source,
+            event_sink=_workbench_geo_event_sink(workbench),
+            repository=search_repository,
+        ),
+    )
+    knowledge_retriever = cast(
+        KnowledgeRetriever,
+        supplied.get("knowledge_retriever") or NullKnowledgeRetriever(),
     )
 
     def default_readiness() -> bool:
@@ -323,6 +403,7 @@ def build_dependencies(
         run_repository=run_repository,
         artifact_manager=artifact_manager,
         graph=graph,
+        planning_graph=planning_graph,
         job_runner=job_runner,
         execution_adapter=execution_adapter,
         readiness=readiness,
@@ -338,13 +419,19 @@ def build_dependencies(
         model_adapter=model_adapter,
         workbench=workbench,
         turn_service=turn_service,
+        geo_repository=geo_repository,
+        geo_search_repository=search_repository,
         geo_service=geo_service,
+        geo_search_service=geo_search_service,
+        knowledge_retriever=knowledge_retriever,
     )
     analysis_service = AnalysisService(container)
     container.analysis_service = analysis_service
     turn_service.bind_analysis(analysis_service)
     turn_service.bind_geo(geo_service)
+    turn_service.bind_geo_search(geo_search_service)
     geo_service.bind_event_sink(_workbench_geo_event_sink(workbench))
+    geo_search_service.bind_event_sink(_workbench_geo_event_sink(workbench))
     geo_service.bind_ready_sink(turn_service.resume_geo_ready)
     stack.callback(container.shutdown)
     return container
@@ -385,6 +472,12 @@ def _workbench_geo_event_sink(workbench: WorkbenchStore) -> Callable[[dict[str, 
             return
         if kind != "geo.updated":
             return
+        if "result_count" in event:
+            event_kind: EventKind = "geo.search.updated"
+            if event.get("status") == "SELECTED":
+                event_kind = "geo.search.selected"
+            workbench.append_event(conversation_id, turn_id, event_kind, event)
+            return
         workbench.append_event(conversation_id, turn_id, "geo.updated", event)
 
     return publish
@@ -394,6 +487,8 @@ def _recover_orphaned_api_runs(
     repository: RunRepository,
     artifact_manager: ArtifactManager,
     runs_dir: Path,
+    geo_repository: GeoRepository,
+    search_repository: GeoSearchRepository,
 ) -> None:
     root = runs_dir.resolve()
     if not root.is_dir():
@@ -407,7 +502,14 @@ def _recover_orphaned_api_runs(
             continue
         if state.get("status") not in {RunStatus.QUEUED.value, RunStatus.RUNNING.value}:
             continue
-        if _recover_completed_run(directory.name, state, repository, artifact_manager):
+        if _recover_completed_run(
+            directory.name,
+            state,
+            repository,
+            artifact_manager,
+            geo_repository,
+            search_repository,
+        ):
             continue
         state["status"] = RunStatus.FAILED.value
         state["error"] = {"code": "API_PROCESS_RESTARTED"}
@@ -419,6 +521,8 @@ def _recover_completed_run(
     state: dict[str, Any],
     repository: RunRepository,
     artifact_manager: ArtifactManager,
+    geo_repository: GeoRepository,
+    search_repository: GeoSearchRepository,
 ) -> bool:
     try:
         manifest_path = artifact_manager.resolve(run_id, "manifest.json")
@@ -431,6 +535,14 @@ def _recover_completed_run(
             or plan.dataset_id != str(manifest.dataset_id)
             or manifest.plan_revision != state.get("plan_revision")
             or manifest.plan_hash != calculate_plan_hash(plan)
+        ):
+            return False
+        if not _recovery_source_backing_is_verified(
+            manifest,
+            run_id,
+            artifact_manager,
+            geo_repository,
+            search_repository,
         ):
             return False
         # The controller commits statistical completion before report publication.
@@ -452,6 +564,48 @@ def _recover_completed_run(
     return True
 
 
+def _recovery_source_backing_is_verified(
+    manifest: RunManifest,
+    run_id: str,
+    artifact_manager: ArtifactManager,
+    geo_repository: GeoRepository,
+    search_repository: GeoSearchRepository,
+) -> bool:
+    """Verify copied source evidence against durable GEO state before recovery."""
+
+    if manifest.source_id is None:
+        return manifest.search_provenance is None and not manifest.source_artifacts
+    try:
+        source = geo_repository.read(manifest.source_id)
+        source_artifacts = {
+            record.relative_path: record.sha256 for record in manifest.source_artifacts
+        }
+        expected_paths = {
+            "source/raw/source.bin": source.raw_sha256,
+            "source/source.json": _sha256_file(source.source_json),
+            "source/normalized/counts.csv": source.counts_sha256,
+            "source/normalized/metadata.csv": source.metadata_sha256,
+        }
+        if len(source_artifacts) != len(expected_paths) or source_artifacts != expected_paths:
+            return False
+        for relative_path, expected_hash in expected_paths.items():
+            copied_path = artifact_manager.resolve(run_id, relative_path)
+            if not copied_path.is_file() or _sha256_file(copied_path) != expected_hash:
+                return False
+        if manifest.search_provenance is None:
+            return source.search_provenance is None
+        if source.search_provenance != manifest.search_provenance:
+            return False
+        search_repository.verify_provenance(
+            manifest.search_provenance,
+            expected_status=GeoSearchStatus.SELECTED,
+            expected_source_id=manifest.source_id,
+        )
+        return True
+    except (FileNotFoundError, GeoRepositoryError, GeoSearchRepositoryError, OSError, ValueError):
+        return False
+
+
 def _sha256_file(path: Path) -> str:
     digest = sha256()
     with path.open("rb") as stream:
@@ -466,6 +620,7 @@ def _build_controller(
     project_root: Path,
     dataset_repository: DatasetRepository,
     artifact_manager: ArtifactManager,
+    search_repository: GeoSearchRepository,
 ) -> ExecutionController:
     return ExecutionController(
         project_root=project_root,
@@ -475,6 +630,7 @@ def _build_controller(
         tool_registry=ToolRegistry(project_root),
         git_commit=_git_commit(project_root),
         software_versions=_software_versions(project_root),
+        search_repository=search_repository,
     )
 
 

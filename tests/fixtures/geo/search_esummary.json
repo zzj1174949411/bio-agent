@@ -1,0 +1,25 @@
+{
+  "result": {
+    "uids": ["100", "200"],
+    "100": {
+      "uid": "100",
+      "accession": "GSE12345",
+      "title": "Synthetic brain RNA-seq",
+      "summary": "Fixture record for a safe GEO search.",
+      "taxon": "Homo sapiens",
+      "gpl": "GPL99999",
+      "n_samples": 4,
+      "PDAT": "2025/01/01"
+    },
+    "200": {
+      "uid": "200",
+      "accession": "GSE23456",
+      "title": "Synthetic liver RNA-seq",
+      "summary": "Second fixture record.",
+      "taxon": "Homo sapiens",
+      "gpl": "GPL88888",
+      "n_samples": 6,
+      "PDAT": "2024/01/01"
+    }
+  }
+}

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from bioagent.api.dependencies import DependencyContainer, get_dependencies
+from bioagent.api.workbench_owner import ensure_workbench_owner
 from bioagent.models.adapters import ProbeResult
 
 router = APIRouter()
@@ -42,6 +43,7 @@ class CredentialInput(BaseModel):
 @router.get("/api/v1/workbench/bootstrap")
 def bootstrap(request: Request, response: Response) -> dict[str, str]:
     response.headers["Cache-Control"] = "no-store"
+    ensure_workbench_owner(request, response)
     return {"csrf_token": request.app.state.csrf_token}
 
 

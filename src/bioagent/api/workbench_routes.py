@@ -3,11 +3,12 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import StreamingResponse
 
 from bioagent.api.dependencies import DependencyContainer, get_dependencies
+from bioagent.api.workbench_owner import ensure_workbench_owner, workbench_owner_hash
 from bioagent.workbench.events import event_cursor, stream_events
 from bioagent.workbench.models import Conversation, Message, Page, Project, Turn, WorkbenchError
 
@@ -68,8 +69,14 @@ def update_project(identity: UUID, payload: UpdateProject, deps: Deps) -> Projec
 
 
 @router.post("/conversations", status_code=201)
-def create_conversation(payload: CreateConversation, deps: Deps) -> Conversation:
-    return deps.workbench.create_conversation(payload.project_id, payload.title)
+def create_conversation(
+    payload: CreateConversation, request: Request, response: Response, deps: Deps
+) -> Conversation:
+    conversation = deps.workbench.create_conversation(payload.project_id, payload.title)
+    deps.workbench.bind_conversation_owner(
+        conversation.id, ensure_workbench_owner(request, response)
+    )
+    return conversation
 
 
 @router.get("/conversations")
@@ -100,7 +107,10 @@ def list_messages(
 
 
 @router.post("/conversations/{identity}/turns", status_code=202)
-async def submit_turn(identity: UUID, payload: SubmitTurn, deps: Deps) -> Turn:
+async def submit_turn(identity: UUID, payload: SubmitTurn, request: Request, deps: Deps) -> Turn:
+    owner_hash = workbench_owner_hash(request)
+    if owner_hash is not None:
+        deps.workbench.bind_conversation_owner(identity, owner_hash)
     for dataset_id in payload.dataset_ids:
         try:
             deps.dataset_repository.paths(str(dataset_id))

@@ -12,7 +12,7 @@ from ollama import ResponseError
 from openai import APIStatusError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from bioagent.models.profiles import ModelError
+from bioagent.models.profiles import ModelError, ModelSnapshot
 from bioagent.models.store import ModelProfileStore
 
 
@@ -77,9 +77,18 @@ class ModelAdapter:
     def __init__(self, store: ModelProfileStore) -> None:
         self._store = store
 
-    def create(self, identity: UUID) -> tuple[BaseChatModel, str]:
-        profile, secret = self._store.request_config(identity)
-        options = structured_options(profile.provider, profile.structured_method)
+    def create(
+        self, identity: UUID, fixed: ModelSnapshot | None = None
+    ) -> tuple[BaseChatModel, str]:
+        model, snapshot = self.prepare(identity, fixed)
+        options = structured_options(snapshot.provider, snapshot.structured_method)
+        return model, str(options["method"])
+
+    def prepare(
+        self, identity: UUID, fixed: ModelSnapshot | None = None
+    ) -> tuple[BaseChatModel, ModelSnapshot]:
+        current, secret = self._store.request_config(identity, fixed)
+        profile = fixed or current.snapshot()
         if profile.provider == "ollama":
             model: BaseChatModel = ChatOllama(
                 base_url=profile.base_url, model=profile.model, client_kwargs={"timeout": 60}
@@ -96,7 +105,7 @@ class ModelAdapter:
                 max_retries=0,
                 **extra,
             )
-        return model, str(options["method"])
+        return model, profile
 
     async def probe(self, identity: UUID) -> ProbeResult:
         try:

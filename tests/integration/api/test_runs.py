@@ -1,22 +1,41 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from threading import Barrier, BrokenBarrierError, Event
 from typing import Any
 from uuid import uuid4
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from bioagent.artifacts.manager import ArtifactManager
 from bioagent.artifacts.manifest import ApprovalRecord, AttemptRecord, RunManifest
 from bioagent.config import Settings
+from bioagent.datasets.repository import DatasetRepository
 from bioagent.domain.plans import AnalysisPlan
 from bioagent.domain.qc import QCReport, QCStatus
 from bioagent.domain.runs import RunStatus
 from bioagent.execution.controller import ExecutionResult, calculate_plan_hash
 from bioagent.execution.job_runner import JobStatus, LocalJobRunner
+from bioagent.geo.models import (
+    Compression,
+    DataKind,
+    GeoCandidate,
+    GeoSearchProvenance,
+    GeoSource,
+    SourceSelection,
+)
+from bioagent.geo.repository import GeoRepository, GeoSourceRecord
+from bioagent.geo.search_repository import (
+    GeoSearchRecord,
+    GeoSearchRepository,
+    GeoSearchStatus,
+)
+from bioagent.retrieval.contracts import DatasetSearchHit, DatasetSearchQuery, EvidenceRef
 from bioagent.storage.runs import RunRepository
 
 
@@ -204,6 +223,106 @@ def _completed_manifest(
                 qc=qc,
             ),
         ),
+    )
+
+
+def _publish_selected_geo_source(
+    *,
+    repository: GeoRepository,
+    search_repository: GeoSearchRepository,
+    dataset_repository: Any,
+    dataset_id: str,
+    root: Path,
+) -> tuple[GeoSourceRecord, GeoSearchProvenance]:
+    counts_path, metadata_path = dataset_repository.paths(dataset_id)
+    counts = pd.read_csv(counts_path, index_col=0)
+    metadata = pd.read_csv(metadata_path, index_col=0)
+    source_id = uuid4()
+    candidate = GeoCandidate(
+        id=uuid4(),
+        source_id=source_id,
+        accession="GSE12345",
+        url="https://fixture.invalid/GSE12345_counts.csv",
+        file_name="GSE12345_counts.csv",
+        data_kind=DataKind.RAW_COUNTS,
+        evidence=("local fixture",),
+        compression=Compression.NONE,
+    )
+    source = GeoSource(
+        id=source_id,
+        accession="GSE12345",
+        title="Local selected GEO source",
+        candidates=(candidate,),
+        retrieved_at=datetime.now(UTC),
+    )
+    raw_path = root / "GSE12345_counts.csv"
+    raw_path.write_bytes(counts_path.read_bytes())
+    sample_columns = tuple(str(column) for column in counts.columns)
+    groups = {sample_id: str(metadata.loc[sample_id, "condition"]) for sample_id in sample_columns}
+    selection = SourceSelection(
+        source_id=source_id,
+        candidate_id=candidate.id,
+        raw_sha256=sha256(raw_path.read_bytes()).hexdigest(),
+        feature_column="feature_id",
+        sample_columns=sample_columns,
+        sample_map={sample_id: sample_id for sample_id in sample_columns},
+        groups=groups,
+        numerator="AD",
+        denominator="Control",
+        revision=1,
+        evidence=("local fixture selection",),
+    )
+    query = DatasetSearchQuery(text="brain RNA-seq")
+    provenance = GeoSearchProvenance(
+        search_id=uuid4(),
+        query_hash=query.query_hash,
+        selected_accession=source.accession,
+        selection_revision=1,
+        retrieved_at=source.retrieved_at,
+        evidence_sha256="a" * 64,
+    )
+    search_repository.write(
+        GeoSearchRecord(
+            id=provenance.search_id,
+            status=GeoSearchStatus.SELECTED,
+            revision=2,
+            query=query,
+            query_hash=query.query_hash,
+            items=(
+                DatasetSearchHit(
+                    provider="geo",
+                    source_id=source.accession,
+                    title="Local selected GEO source",
+                    source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE12345",
+                    evidence=EvidenceRef(
+                        provider="geo",
+                        source_id=source.accession,
+                        source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE12345",
+                        retrieved_at=provenance.retrieved_at,
+                        content_sha256=provenance.evidence_sha256,
+                    ),
+                ),
+            ),
+            total=1,
+            conversation_id=uuid4(),
+            turn_id=uuid4(),
+            source_id=str(source_id),
+            selected_accession=source.accession,
+            selection_revision=provenance.selection_revision,
+        )
+    )
+    return (
+        repository.publish(
+            source,
+            candidate,
+            selection,
+            raw_path,
+            counts,
+            metadata,
+            dataset_id=dataset_id,
+            provenance=provenance,
+        ),
+        provenance,
     )
 
 
@@ -552,6 +671,207 @@ def test_startup_recovers_orphaned_running_api_state(tmp_path: Path) -> None:
     )
 
     with TestClient(app) as client:
+        recovered = client.get(f"/api/v1/runs/{run_id}")
+
+    assert recovered.status_code == 200
+    assert recovered.json()["status"] == "FAILED"
+    assert recovered.json()["error"] == {"code": "API_PROCESS_RESTARTED"}
+
+
+def test_real_dependency_container_runs_published_selected_geo_source(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    with TestClient(app) as client:
+        dataset_id = _upload(client)
+        dependencies = app.state.dependencies
+        assert isinstance(dependencies.geo_repository, GeoRepository)
+        assert isinstance(dependencies.geo_search_repository, GeoSearchRepository)
+        source, _ = _publish_selected_geo_source(
+            repository=dependencies.geo_repository,
+            search_repository=dependencies.geo_search_repository,
+            dataset_repository=dependencies.dataset_repository,
+            dataset_id=dataset_id,
+            root=tmp_path,
+        )
+
+        run_id = dependencies.analysis_service.create_run(
+            dataset_id=dataset_id,
+            goal="Create a run from the selected local GEO source",
+            agent_context={
+                "conversation_id": str(uuid4()),
+                "turn_id": str(uuid4()),
+                "source_id": str(source.source_id),
+            },
+        )
+
+        assert dependencies.run_repository.read(run_id)["status"] == "AWAITING_APPROVAL"
+        assert (
+            dependencies.artifact_manager.resolve(run_id, "source/source.json").read_bytes()
+            == source.source_json.read_bytes()
+        )
+
+
+def test_dependency_container_rejects_invalid_geo_repository_override(tmp_path: Path) -> None:
+    app = _app(tmp_path, extra_overrides={"geo_repository": object()})
+
+    with (
+        pytest.raises(TypeError, match="geo_repository override must be a GeoRepository"),
+        TestClient(app),
+    ):
+        pass
+
+
+def test_dependency_container_binds_search_repository_to_geo_repository_override(
+    tmp_path: Path,
+) -> None:
+    geo_repository = GeoRepository(tmp_path / "data" / "sources")
+    app = _app(tmp_path, extra_overrides={"geo_repository": geo_repository})
+
+    with TestClient(app) as client:
+        dataset_id = _upload(client)
+        dependencies = app.state.dependencies
+        source, _ = _publish_selected_geo_source(
+            repository=dependencies.geo_repository,
+            search_repository=dependencies.geo_search_repository,
+            dataset_repository=dependencies.dataset_repository,
+            dataset_id=dataset_id,
+            root=tmp_path,
+        )
+
+        assert dependencies.geo_repository.read(source.source_id).source_id == source.source_id
+
+
+def test_startup_recovery_fails_closed_for_tampered_selected_geo_source(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    datasets = DatasetRepository(data_dir)
+    dataset_id = datasets.create(
+        (Path("tests/fixtures") / "counts_valid.csv").read_bytes(),
+        (Path("tests/fixtures") / "metadata_valid.csv").read_bytes(),
+        ".csv",
+        ".csv",
+    )
+    search_repository = GeoSearchRepository(data_dir / "searches")
+    geo_repository = GeoRepository(data_dir / "sources", search_repository=search_repository)
+    source, provenance = _publish_selected_geo_source(
+        repository=geo_repository,
+        search_repository=search_repository,
+        dataset_repository=datasets,
+        dataset_id=dataset_id,
+        root=tmp_path,
+    )
+    runs_dir = tmp_path / "runs"
+    artifacts = ArtifactManager(runs_dir)
+    repository = RunRepository(runs_dir)
+    run_id = artifacts.create_run()
+    source_artifacts = tuple(
+        artifacts.write_bytes(run_id, artifact_id, source_path.read_bytes())
+        for artifact_id, source_path in (
+            ("source/raw/source.bin", source.raw_path),
+            ("source/source.json", source.source_json),
+            ("source/normalized/counts.csv", source.counts_path),
+            ("source/normalized/metadata.csv", source.metadata_path),
+        )
+    )
+    result = artifacts.write_bytes(run_id, "attempts/recovered/result.txt", b"done")
+    report = artifacts.write_bytes(run_id, "report/report.html", b"<html>done</html>")
+    plan = AnalysisPlan(
+        dataset_id=dataset_id,
+        comparison={"factor": "condition", "numerator": "AD", "denominator": "Control"},
+    )
+    plan_hash = calculate_plan_hash(plan)
+    now = datetime.now(UTC)
+    attempt_id = uuid4()
+    dataset_hashes = datasets.hashes(dataset_id)
+    manifest = RunManifest(
+        run_id=run_id,
+        dataset_id=dataset_id,
+        attempt_id=attempt_id,
+        plan_revision=1,
+        plan_hash=plan_hash,
+        input_hashes={
+            "counts": dataset_hashes.counts_sha256,
+            "metadata": dataset_hashes.metadata_sha256,
+        },
+        tool="deseq2",
+        software_versions={"r": "4.5.2", "deseq2": "1.50.2"},
+        git_commit="d" * 40,
+        comparison=plan.comparison,
+        alpha=plan.options.alpha,
+        lfc_shrink=plan.options.lfc_shrink,
+        random_seed=plan.options.random_seed,
+        started_at=now,
+        ended_at=now,
+        status=RunStatus.COMPLETED,
+        qc=QCReport(status=QCStatus.PASS, issues=()),
+        approvals=(
+            ApprovalRecord(
+                decision="APPROVED",
+                actor="user",
+                decided_at=now,
+                plan_revision=1,
+                plan_hash=plan_hash,
+            ),
+        ),
+        attempts=(
+            AttemptRecord(
+                attempt_id=attempt_id,
+                started_at=now,
+                ended_at=now,
+                status=RunStatus.COMPLETED,
+                qc=QCReport(status=QCStatus.PASS, issues=()),
+            ),
+        ),
+        artifacts=(*source_artifacts, result, report),
+        source_id=source.source_id,
+        source_artifacts=source_artifacts,
+        search_provenance=provenance,
+    )
+    artifacts.write_manifest(run_id, manifest)
+    repository.write(
+        run_id,
+        {
+            "run_id": run_id,
+            "dataset_id": dataset_id,
+            "status": "RUNNING",
+            "plan_revision": 1,
+            "plan": plan.model_dump(mode="json"),
+        },
+    )
+    source_payload = json.loads(source.source_json.read_text(encoding="utf-8"))
+    tampered = GeoSearchProvenance.model_validate(
+        {**source_payload["search_provenance"], "query_hash": "f" * 64}
+    )
+    source_payload["search_provenance"] = tampered.model_dump(mode="json")
+    source_payload["search_provenance_sha256"] = tampered.provenance_sha256
+    source.source_json.write_text(json.dumps(source_payload), encoding="utf-8")
+    copied_source_json = artifacts.resolve(run_id, "source/source.json")
+    copied_source_json.write_text(json.dumps(source_payload), encoding="utf-8")
+    copied_source_hash = sha256(copied_source_json.read_bytes()).hexdigest()
+    updated_source_artifacts = tuple(
+        artifact.model_copy(update={"sha256": copied_source_hash})
+        if artifact.relative_path == "source/source.json"
+        else artifact
+        for artifact in manifest.source_artifacts
+    )
+    updated_artifacts = tuple(
+        artifact.model_copy(update={"sha256": copied_source_hash})
+        if artifact.relative_path == "source/source.json"
+        else artifact
+        for artifact in manifest.artifacts
+    )
+    artifacts.write_manifest(
+        run_id,
+        manifest.model_copy(
+            update={
+                "search_provenance": tampered,
+                "source_artifacts": updated_source_artifacts,
+                "artifacts": updated_artifacts,
+            }
+        ),
+    )
+
+    with TestClient(_app(tmp_path)) as client:
         recovered = client.get(f"/api/v1/runs/{run_id}")
 
     assert recovered.status_code == 200

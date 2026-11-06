@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from bioagent.artifacts.manifest import AgentContext
 from bioagent.geo.repository import GeoRepository, GeoRepositoryError, GeoSourceRecord
+from bioagent.models.profiles import ModelError
 
 if TYPE_CHECKING:
     from bioagent.api.dependencies import DependencyContainer
@@ -22,6 +23,7 @@ class AnalysisService:
         dataset_id: str,
         goal: str,
         agent_context: Mapping[str, object] | None = None,
+        planner: object | None = None,
     ) -> str:
         # Importing the validation helper lazily avoids a route/service cycle.
         from bioagent.api.routes import _stored_validation
@@ -42,11 +44,20 @@ class AnalysisService:
         if context is not None:
             initial["agent_context"] = context.model_dump(mode="json")
         try:
-            result = self._dependencies.graph.invoke(initial, config)
+            graph = (
+                self._dependencies.planning_graph(planner)
+                if planner is not None
+                else self._dependencies.graph
+            )
+            result = graph.invoke(initial, config)
             from bioagent.api.routes import _workflow_state
 
             state = _workflow_state(result)
             self._dependencies.run_repository.write(run_id, state)
+            if planner is not None and state.get("status") != "AWAITING_APPROVAL":
+                # A failed bound model must not masquerade as an approval card.
+                # Keep the diagnostic index, but never fall back to a default.
+                raise ModelError("MODEL_OUTPUT_INVALID")
             return run_id
         except Exception:
             # A run directory without an index is not an analysis record.

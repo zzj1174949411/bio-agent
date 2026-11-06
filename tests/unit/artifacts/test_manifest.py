@@ -16,6 +16,7 @@ from bioagent.artifacts.manifest import (
 from bioagent.domain.plans import Comparison
 from bioagent.domain.qc import QCIssue, QCReport, QCStatus
 from bioagent.domain.runs import RunStatus
+from bioagent.geo.models import GeoSearchProvenance
 
 _SHA256 = "a" * 64
 _PLAN_HASH = "b" * 64
@@ -158,6 +159,35 @@ def test_manifest_contains_complete_provenance_fields() -> None:
     assert payload["artifacts"] == [
         {"relative_path": "attempts/results/table.csv", "sha256": _SHA256}
     ]
+    assert payload["search_provenance"] is None
+
+
+def test_manifest_preserves_verified_geo_search_provenance_and_old_manifests_default_none() -> None:
+    manifest = _completed_manifest(str(uuid4()), str(uuid4()))
+    provenance = GeoSearchProvenance(
+        search_id=uuid4(),
+        query_hash="a" * 64,
+        provider="geo",
+        selected_accession="GSE12345",
+        selection_revision=2,
+        retrieved_at="2026-09-14T00:00:00Z",
+        evidence_sha256="b" * 64,
+    )
+
+    source_record = ArtifactRecord(relative_path="source/source.json", sha256="c" * 64)
+    linked = manifest.model_copy(
+        update={
+            "source_id": uuid4(),
+            "source_artifacts": (source_record,),
+            "artifacts": (*manifest.artifacts, source_record),
+            "search_provenance": provenance,
+        }
+    )
+
+    assert linked.search_provenance == provenance
+    old_payload = manifest.model_dump(mode="json")
+    old_payload.pop("search_provenance", None)
+    assert RunManifest.model_validate(old_payload).search_provenance is None
 
 
 def test_manifest_nested_provenance_values_are_immutable() -> None:

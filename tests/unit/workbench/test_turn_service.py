@@ -294,7 +294,7 @@ def test_default_driver_freezes_config_and_excludes_private_reasoning(
         )
 
     constructor = Mock(return_value=SimpleNamespace(astream=output))
-    monkeypatch.setattr("bioagent.workbench.turns.ChatOllama", constructor)
+    monkeypatch.setattr("bioagent.models.adapters.ChatOllama", constructor)
     prepared = ConfiguredChatFactory(profiles)(profile.id, None)
     profiles.request_config.return_value = (profile.model_copy(update={"model": "changed"}), None)
 
@@ -347,7 +347,7 @@ def test_configured_driver_exposes_only_restricted_geo_tools(monkeypatch):
             return BoundModel()
 
     model = Model()
-    monkeypatch.setattr("bioagent.workbench.turns.ChatOllama", Mock(return_value=model))
+    monkeypatch.setattr("bioagent.models.adapters.ChatOllama", Mock(return_value=model))
     prepared = ConfiguredChatFactory(profiles)(profile.id, None)
 
     async def collect():
@@ -356,6 +356,8 @@ def test_configured_driver_exposes_only_restricted_geo_tools(monkeypatch):
     outputs = asyncio.run(collect())
     assert outputs == [{"kind": "geo_lookup", "accession": "GSE123"}]
     assert {tool["function"]["name"] for tool in model.tools} == {
+        "plan_analysis",
+        "dataset_search",
         "geo_lookup",
         "geo_import",
     }
@@ -387,7 +389,7 @@ def test_configured_driver_reassembles_streamed_geo_tool_arguments(monkeypatch):
         def bind_tools(self, _tools):
             return BoundModel()
 
-    monkeypatch.setattr("bioagent.workbench.turns.ChatOllama", Mock(return_value=Model()))
+    monkeypatch.setattr("bioagent.models.adapters.ChatOllama", Mock(return_value=Model()))
     prepared = ConfiguredChatFactory(profiles)(profile.id, None)
 
     async def collect():
@@ -422,7 +424,7 @@ def test_configured_driver_rejects_untrusted_geo_tool_fields(monkeypatch):
         def bind_tools(self, _tools):
             return BoundModel()
 
-    monkeypatch.setattr("bioagent.workbench.turns.ChatOllama", Mock(return_value=Model()))
+    monkeypatch.setattr("bioagent.models.adapters.ChatOllama", Mock(return_value=Model()))
     prepared = ConfiguredChatFactory(profiles)(profile.id, None)
 
     async def collect():

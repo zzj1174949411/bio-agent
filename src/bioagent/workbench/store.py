@@ -7,6 +7,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from hashlib import sha256
+from hmac import compare_digest
 from pathlib import Path
 from threading import RLock
 from typing import Literal, Self
@@ -58,6 +59,12 @@ _MIGRATIONS = (
         "CREATE INDEX project_page ON projects(updated_at DESC, id DESC)",
         "CREATE INDEX conversation_page ON conversations(project_id, updated_at DESC, id DESC)",
         "CREATE INDEX message_page ON messages(conversation_id, updated_at DESC, id DESC)",
+    ),
+    ("ALTER TABLE conversations ADD COLUMN geo_search_id TEXT",),
+    (
+        """CREATE TABLE conversation_owners (
+            conversation_id TEXT PRIMARY KEY REFERENCES conversations(id),
+            owner_token_sha256 TEXT NOT NULL)""",
     ),
 )
 _TRANSITIONS = {
@@ -159,6 +166,7 @@ class WorkbenchStore:
                 "turns",
                 "messages",
                 "events",
+                "conversation_owners",
                 "turn_request_once",
                 "one_active_turn",
                 "event_sequence",
@@ -210,6 +218,36 @@ class WorkbenchStore:
                 (str(chat.id), str(chat.project_id), now.isoformat(), chat.model_dump_json()),
             )
         return chat
+
+    def bind_conversation_owner(
+        self, conversation_id: UUID | str, owner_token_sha256: str
+    ) -> None:
+        if len(owner_token_sha256) != 64:
+            raise ValueError("CONVERSATION_OWNER_INVALID")
+        with self._transaction() as db:
+            self._get(db, "conversations", conversation_id, Conversation, "CONVERSATION_NOT_FOUND")
+            existing = db.execute(
+                "SELECT owner_token_sha256 FROM conversation_owners WHERE conversation_id=?",
+                (_id(conversation_id),),
+            ).fetchone()
+            if existing is None:
+                db.execute(
+                    "INSERT INTO conversation_owners VALUES (?, ?)",
+                    (_id(conversation_id), owner_token_sha256),
+                )
+            elif not compare_digest(existing["owner_token_sha256"], owner_token_sha256):
+                raise WorkbenchError("CONVERSATION_OWNER_CONFLICT")
+
+    def owns_conversation(self, conversation_id: UUID | str, owner_token_sha256: str) -> bool:
+        try:
+            with self._lock:
+                row = self._db.execute(
+                    "SELECT owner_token_sha256 FROM conversation_owners WHERE conversation_id=?",
+                    (_id(conversation_id),),
+                ).fetchone()
+            return row is not None and compare_digest(row["owner_token_sha256"], owner_token_sha256)
+        except (TypeError, ValueError):
+            return False
 
     def _update[T: Project](
         self,
@@ -387,6 +425,29 @@ class WorkbenchStore:
             db.execute(
                 "UPDATE conversations SET updated_at=?, record=? WHERE id=?",
                 (changed.updated_at.isoformat(), changed.model_dump_json(), str(changed.id)),
+            )
+            return changed
+
+    def set_geo_search(self, conversation_id: UUID | str, search_id: UUID) -> Conversation:
+        with self._transaction() as db:
+            original = self._get(
+                db, "conversations", conversation_id, Conversation, "CONVERSATION_NOT_FOUND"
+            )
+            changed = Conversation.model_validate(
+                {
+                    **original.model_dump(),
+                    "geo_search_id": search_id,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            db.execute(
+                "UPDATE conversations SET updated_at=?, geo_search_id=?, record=? WHERE id=?",
+                (
+                    changed.updated_at.isoformat(),
+                    str(search_id),
+                    changed.model_dump_json(),
+                    str(changed.id),
+                ),
             )
             return changed
 

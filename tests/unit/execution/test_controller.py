@@ -24,6 +24,13 @@ from bioagent.execution.controller import (
     calculate_plan_hash,
 )
 from bioagent.execution.r_runner import RExecutionFailedError
+from bioagent.geo.models import GeoSearchProvenance
+from bioagent.geo.search_repository import (
+    GeoSearchRecord,
+    GeoSearchRepository,
+    GeoSearchStatus,
+)
+from bioagent.retrieval.contracts import DatasetSearchHit, DatasetSearchQuery, EvidenceRef
 from bioagent.tools.registry import ToolRegistry, ToolSpec
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -143,7 +150,12 @@ class ControllerHarness:
     plan: AnalysisPlan
 
 
-def _harness(tmp_path: Path, *, failures: int = 0) -> ControllerHarness:
+def _harness(
+    tmp_path: Path,
+    *,
+    failures: int = 0,
+    search_repository: GeoSearchRepository | None = None,
+) -> ControllerHarness:
     project_root = tmp_path / "project"
     project_root.mkdir()
     datasets = DatasetRepository(project_root / "data")
@@ -165,6 +177,7 @@ def _harness(tmp_path: Path, *, failures: int = 0) -> ControllerHarness:
             "apeglm": "1.32.0",
         },
         clock=lambda: STARTED_AT,
+        search_repository=search_repository,
     )
     return ControllerHarness(
         controller=controller,
@@ -209,6 +222,202 @@ def test_controller_rejects_unapproved_plan_before_runner_call(tmp_path: Path) -
     state["approval"] = {"status": "PENDING", "plan_revision": 1}
 
     with pytest.raises(ExecutionRejectedError, match="PLAN_NOT_APPROVED"):
+        harness.controller.execute(state)
+
+    assert harness.runner.calls == []
+
+
+def test_controller_rejects_tampered_search_provenance_before_runner_call(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    source_id = uuid4()
+    provenance = GeoSearchProvenance(
+        search_id=uuid4(),
+        query_hash="a" * 64,
+        provider="geo",
+        selected_accession="GSE12345",
+        selection_revision=3,
+        retrieved_at="2026-09-14T00:00:00Z",
+        evidence_sha256="b" * 64,
+    )
+    raw, counts, metadata = b"raw", b"counts", b"metadata"
+    harness.artifacts.write_bytes(harness.run_id, "source/raw/source.bin", raw)
+    harness.artifacts.write_bytes(harness.run_id, "source/normalized/counts.csv", counts)
+    harness.artifacts.write_bytes(harness.run_id, "source/normalized/metadata.csv", metadata)
+    source_payload = {
+        "source_id": str(source_id),
+        "dataset_id": harness.plan.dataset_id,
+        "accession": "GSE12345",
+        "raw_sha256": sha256(raw).hexdigest(),
+        "counts_sha256": sha256(counts).hexdigest(),
+        "metadata_sha256": sha256(metadata).hexdigest(),
+        "search_provenance": {
+            **provenance.model_dump(mode="json"),
+            "selected_accession": "GSE23456",
+        },
+        "search_provenance_sha256": provenance.provenance_sha256,
+    }
+    harness.artifacts.write_json(harness.run_id, "source/source.json", source_payload)
+    state = _state(harness.run_id, harness.plan)
+    state["agent_context"] = {
+        "conversation_id": str(uuid4()),
+        "turn_id": str(uuid4()),
+        "source_id": str(source_id),
+    }
+
+    with pytest.raises(ExecutionRejectedError, match="SOURCE_SEARCH_PROVENANCE_TAMPERED"):
+        harness.controller.execute(state)
+
+    assert harness.runner.calls == []
+
+
+def test_controller_rejects_self_consistent_forged_search_provenance_against_snapshot(
+    tmp_path: Path,
+) -> None:
+    source_id = uuid4()
+    query = DatasetSearchQuery(text="brain")
+    verified = GeoSearchProvenance(
+        search_id=uuid4(),
+        query_hash=query.query_hash,
+        provider="geo",
+        selected_accession="GSE12345",
+        selection_revision=3,
+        retrieved_at="2026-09-14T00:00:00Z",
+        evidence_sha256="b" * 64,
+    )
+    search_repository = GeoSearchRepository(tmp_path / "searches")
+    search_repository.write(
+        GeoSearchRecord(
+            id=verified.search_id,
+            status=GeoSearchStatus.SELECTED,
+            revision=4,
+            query=query,
+            query_hash=query.query_hash,
+            items=(
+                DatasetSearchHit(
+                    provider="geo",
+                    source_id="GSE12345",
+                    title="fixture",
+                    source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE12345",
+                    evidence=EvidenceRef(
+                        provider="geo",
+                        source_id="GSE12345",
+                        source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE12345",
+                        retrieved_at=verified.retrieved_at,
+                        content_sha256=verified.evidence_sha256,
+                    ),
+                ),
+            ),
+            total=1,
+            conversation_id=uuid4(),
+            turn_id=uuid4(),
+            source_id=str(source_id),
+            selected_accession=verified.selected_accession,
+            selection_revision=verified.selection_revision,
+        )
+    )
+    harness = _harness(tmp_path, search_repository=search_repository)
+    forged = verified.model_copy(update={"query_hash": "c" * 64})
+    raw, counts, metadata = b"raw", b"counts", b"metadata"
+    harness.artifacts.write_bytes(harness.run_id, "source/raw/source.bin", raw)
+    harness.artifacts.write_bytes(harness.run_id, "source/normalized/counts.csv", counts)
+    harness.artifacts.write_bytes(harness.run_id, "source/normalized/metadata.csv", metadata)
+    harness.artifacts.write_json(
+        harness.run_id,
+        "source/source.json",
+        {
+            "source_id": str(source_id),
+            "dataset_id": harness.plan.dataset_id,
+            "accession": forged.selected_accession,
+            "raw_sha256": sha256(raw).hexdigest(),
+            "counts_sha256": sha256(counts).hexdigest(),
+            "metadata_sha256": sha256(metadata).hexdigest(),
+            "search_provenance": forged.model_dump(mode="json"),
+            "search_provenance_sha256": forged.provenance_sha256,
+        },
+    )
+    state = _state(harness.run_id, harness.plan)
+    state["agent_context"] = {
+        "conversation_id": str(uuid4()),
+        "turn_id": str(uuid4()),
+        "source_id": str(source_id),
+    }
+
+    with pytest.raises(ExecutionRejectedError, match="SOURCE_SEARCH_PROVENANCE_TAMPERED"):
+        harness.controller.execute(state)
+
+    assert harness.runner.calls == []
+
+
+def test_controller_rejects_selected_source_when_copied_provenance_is_missing(
+    tmp_path: Path,
+) -> None:
+    source_id = uuid4()
+    query = DatasetSearchQuery(text="brain")
+    provenance = GeoSearchProvenance(
+        search_id=uuid4(),
+        query_hash=query.query_hash,
+        provider="geo",
+        selected_accession="GSE12345",
+        selection_revision=1,
+        retrieved_at=STARTED_AT,
+        evidence_sha256="a" * 64,
+    )
+    search_repository = GeoSearchRepository(tmp_path / "searches")
+    search_repository.write(
+        GeoSearchRecord(
+            id=provenance.search_id,
+            status=GeoSearchStatus.SELECTED,
+            revision=2,
+            query=query,
+            query_hash=query.query_hash,
+            items=(
+                DatasetSearchHit(
+                    provider="geo",
+                    source_id="GSE12345",
+                    title="fixture",
+                    source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE12345",
+                    evidence=EvidenceRef(
+                        provider="geo",
+                        source_id="GSE12345",
+                        source_uri="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE12345",
+                        retrieved_at=STARTED_AT,
+                        content_sha256="a" * 64,
+                    ),
+                ),
+            ),
+            total=1,
+            conversation_id=uuid4(),
+            turn_id=uuid4(),
+            source_id=str(source_id),
+            selected_accession="GSE12345",
+            selection_revision=1,
+        )
+    )
+    harness = _harness(tmp_path, search_repository=search_repository)
+    raw, counts, metadata = b"raw", b"counts", b"metadata"
+    harness.artifacts.write_bytes(harness.run_id, "source/raw/source.bin", raw)
+    harness.artifacts.write_bytes(harness.run_id, "source/normalized/counts.csv", counts)
+    harness.artifacts.write_bytes(harness.run_id, "source/normalized/metadata.csv", metadata)
+    harness.artifacts.write_json(
+        harness.run_id,
+        "source/source.json",
+        {
+            "source_id": str(source_id),
+            "dataset_id": harness.plan.dataset_id,
+            "accession": "GSE12345",
+            "raw_sha256": sha256(raw).hexdigest(),
+            "counts_sha256": sha256(counts).hexdigest(),
+            "metadata_sha256": sha256(metadata).hexdigest(),
+        },
+    )
+    state = _state(harness.run_id, harness.plan)
+    state["agent_context"] = {
+        "conversation_id": str(uuid4()),
+        "turn_id": str(uuid4()),
+        "source_id": str(source_id),
+    }
+
+    with pytest.raises(ExecutionRejectedError, match="SOURCE_SEARCH_PROVENANCE_TAMPERED"):
         harness.controller.execute(state)
 
     assert harness.runner.calls == []

@@ -33,6 +33,16 @@ class GeoLookupAction(_Action):
     accession: str = Field(pattern=r"^GSE[1-9][0-9]*$", max_length=32)
 
 
+class DatasetSearchAction(_Action):
+    """Search GEO using business filters only; discovery remains user-selected."""
+
+    kind: Literal["dataset_search"]
+    text: str = Field(min_length=2, max_length=256, strict=True)
+    organism: str | None = Field(default=None, max_length=128, strict=True)
+    tissue: str | None = Field(default=None, max_length=128, strict=True)
+    technology: str | None = Field(default=None, max_length=128, strict=True)
+
+
 class GeoImportAction(_Action):
     """Suggest an already-discovered candidate; the browser confirms the download."""
 
@@ -62,6 +72,7 @@ AssistantAction = Annotated[
     | ClarifyAction
     | PlanAnalysisAction
     | GeoLookupAction
+    | DatasetSearchAction
     | GeoImportAction
     | McpCallAction
     | LoadSkillAction,
@@ -77,6 +88,7 @@ def parse_action(
     | ClarifyAction
     | PlanAnalysisAction
     | GeoLookupAction
+    | DatasetSearchAction
     | GeoImportAction
     | McpCallAction
     | LoadSkillAction

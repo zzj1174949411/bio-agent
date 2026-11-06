@@ -1,7 +1,9 @@
 """Immutable, source-attributed GEO discovery records."""
 
+import json
 from datetime import datetime
 from enum import StrEnum
+from hashlib import sha256
 from typing import Literal
 from uuid import UUID
 
@@ -64,6 +66,32 @@ class GeoCandidate(GeoRecord):
     data_kind: DataKind
     evidence: tuple[str, ...] = Field(min_length=1)
     compression: Compression
+
+
+class GeoSearchProvenance(GeoRecord):
+    """Immutable evidence created only from one selected catalog snapshot."""
+
+    search_id: UUID
+    query_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provider: Literal["geo"] = "geo"
+    selected_accession: str = Field(pattern=r"^GSE[1-9][0-9]*$")
+    selection_revision: int = Field(ge=1, strict=True)
+    retrieved_at: datetime
+    evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def retrieved_at_must_be_timezone_aware(self) -> "GeoSearchProvenance":
+        if self.retrieved_at.tzinfo is None or self.retrieved_at.utcoffset() is None:
+            raise ValueError("retrieved_at must be timezone-aware")
+        return self
+
+    @property
+    def provenance_sha256(self) -> str:
+        payload = self.model_dump(mode="json")
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+        return sha256(encoded).hexdigest()
 
 
 class GeoSource(GeoRecord):

@@ -33,13 +33,19 @@ npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
 
 进入工作台后先创建项目和对话，选择或上传 counts/metadata 数据集，再在 Composer 中选择本轮模型并发送目标。窄屏下用顶部“项目与对话”按钮打开项目栏；新对话会创建在当前选中的项目中，切换项目会清除旧对话上下文。Enter 发送，Shift+Enter 换行，中文输入法组合输入不会发送；运行中的 turn 会禁用重复发送并显示停止入口。页面显示排队、模型处理和工具确认等可审计进度，普通文本按 provider 分片实时显示；模型私有思维链不会保存或展示。实时消息按事件中的 user/assistant 角色渲染。模型鉴权或调用失败时页面会显示稳定错误码，失败的 turn 不会一直占用发送状态。
 
-`Environment / deepseek` 是只读配置，只在服务启动时读取 `.env` 中的 `BIOAGENT_DEEPSEEK_API_KEY`；修改 `.env` 后必须重启服务。若要在页面保存 Key，应在“已保存模型”中选择“新模型”，填写名称、provider、模型、Base URL 和 Key，再点击“保存模型”。可编辑配置的凭据只发送到后端系统凭据存储，保存后清空输入，不写入 localStorage。“探测连接”只有在 provider 返回 `ok=true` 时才显示成功，否则会显示 `MODEL_AUTH_FAILED` 等真实错误码。
+打开“设置 → 模型与 API”，选择“新模型”，填写名称、接口协议、API Base URL、API Key 和模型 ID，保存后返回聊天，在输入区选择模型。支持 OpenAI 兼容 Chat Completions、DeepSeek 和 Ollama；Ollama 不需要 API Key。页面保存的配置即时生效，不需要 `.env` 或重启。编辑配置与聊天选择相互独立；每个对话的模型选择由后端保存，切换对话和刷新后可恢复。配置被删除时需重新选择或进入“管理模型”。
+
+凭据只进入后端系统凭据库，API 不回显，不写入浏览器 localStorage、数据库明文、checkpoint 或 manifest。保存中禁用重复操作；如果配置已保存但凭据写入失败，页面显示失败与实际凭据状态，需要重新填写 Key。探针发送固定非敏感请求，只验证连接和结构化输出，不能代表所有工具能力都已通过验证。
+
+`Environment / deepseek` 和 `Environment / ollama` 是可选的只读兼容配置，来自服务启动时读取的环境变量；修改这些环境变量需要重启。正常工作台用户使用页面配置即可。旧 Streamlit/无 profile 的 API 继续使用默认环境 Planner；`/ready` 仍检查默认依赖，不会因工作台另有有效模型而伪装默认 Planner 可用。
+
+每次发送时绑定不含密钥的配置快照。聊天、上传数据规划和 GEO 导入后的规划使用该轮同一配置；请求中编辑模型不改变原轮次。GEO 延迟回调按原 turn 快照在请求边界解析凭据，配置已删除或凭据缺失时明确失败；不会回退环境模型。已生成待审批计划保留原快照，批准和人工修改仍使用已有计划契约。
 
 “设置”入口还包含可切换的 Skills 与 MCP 页签。Skills 只读取本地说明快照；MCP 必须先保存用户填写的绝对 stdio 命令/argv 或完整 Streamable HTTP endpoint，再显式连接。工具目录默认每次确认，旧 capability revision、过期批准和重启后的旧批准都会失效。详见 [Skills 与 MCP 扩展指南](extensions.md)。
 
-当前内置 GEO 能力是按已知 `GSE` 编号执行 `geo_lookup`，没有关键词发现接口，因此“帮我找一个 AD 长读长数据集”不会自动搜索整个 GEO。关键词搜索需要单独接入受限的 NCBI GEO/Entrez 检索工具或经过批准的搜索 MCP，并保存候选编号、查询词和来源证据；不能用模型猜测编号替代。
+当前内置 GEO 支持明确 GSE 编号查询及受限的关键词目录搜索。可以描述疾病、组织、物种和测序技术；Agent 返回候选后，由用户点击“检查可分析文件”，再确认 raw counts 与样本映射。搜索和选择不会直接启动统计分析，不能用模型猜测编号替代来源证据。长读长数据可作为目录发现目标，但不属于当前 bulk RNA-seq/DESeq2 分析支持范围。知识 RAG 接口当前未配置，不影响 GEO 目录搜索。
 
-模型输出只能产生回答、澄清或分析计划。计划进入原有人工审批卡后，批准当前 revision 才会创建统计 attempt；审批前 R 调用次数保持为零。澄清回答携带 request ID 和 revision，过期响应由后端拒绝。
+模型只可产生受限的回答、澄清、规划、GEO 及已配置工具动作。计划进入原有人工审批卡后，批准当前 revision 才会创建统计 attempt；审批前 R 调用次数保持为零。澄清回答携带 request ID 和 revision，过期响应由后端拒绝。
 
 完成运行后，右侧面板显示运行状态、QC、图表、sandbox 报告 iframe 和逐个 artifact 下载。下载链接来自不透明 artifact ID，服务端重新核对 manifest 与 SHA-256；工作台不提供删除科研证据的按钮。
 
@@ -51,7 +57,7 @@ npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
 npm --prefix frontend run e2e
 ```
 
-用例覆盖可达的 Composer、每轮模型切换、Shift+Enter/Enter、刷新、窄屏入口和固定项目/对话数据。CI 使用 Node 22 和 Chromium；本地若未安装 Playwright 浏览器，可使用已安装的 Chrome，或按 Playwright 官方命令安装浏览器。
+用例覆盖设置保存与返回聊天、编辑和聊天选择独立、对话模型记忆、待审批计划、可达的 Composer、每轮模型切换、Shift+Enter/Enter、刷新、窄屏入口和固定项目/对话数据。CI 使用 Node 22 和 Chromium；本地若未安装 Playwright 浏览器，可使用已安装的 Chrome，或按 Playwright 官方命令安装浏览器。
 
 ## 门禁与诊断
 

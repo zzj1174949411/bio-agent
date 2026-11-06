@@ -1,4 +1,4 @@
-import type { Conversation, GeoImportState, GeoSelection, GeoSourceState, McpServer, Message, ModelProfile, Project, SkillDetail, SkillRecord, ToolDescriptor, ToolPolicy, Turn } from "./types";
+import type { Conversation, GeoImportState, GeoSearchRequest, GeoSearchState, GeoSelection, GeoSourceState, McpServer, Message, ModelProfile, Project, SkillDetail, SkillRecord, ToolDescriptor, ToolPolicy, Turn } from "./types";
 import { parseEventBlock, type WorkbenchEvent } from "./events";
 
 type ErrorBody = { detail?: { code?: string } };
@@ -30,7 +30,7 @@ export class ApiClient {
   updateProject(id: string, payload: { title?: string; archived?: boolean }): Promise<Project> { return this.request(`/workbench/projects/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
   conversations(projectId: string): Promise<{ items: Conversation[] }> { return this.request(`/workbench/conversations?project_id=${encodeURIComponent(projectId)}`); }
   createConversation(projectId: string, title: string): Promise<Conversation> { return this.request("/workbench/conversations", { method: "POST", body: JSON.stringify({ project_id: projectId, title }) }); }
-  updateConversation(id: string, payload: { title?: string; archived?: boolean }): Promise<Conversation> { return this.request(`/workbench/conversations/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
+  updateConversation(id: string, payload: { title?: string; archived?: boolean; selected_profile_id?: string | null }): Promise<Conversation> { return this.request(`/workbench/conversations/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); }
   messages(conversationId: string): Promise<{ items: Message[] }> { return this.request(`/workbench/conversations/${conversationId}/messages`); }
   submitTurn(conversationId: string, text: string, datasetIds: string[] = [], profileId?: string): Promise<Turn> {
     return this.request(`/workbench/conversations/${conversationId}/turns`, { method: "POST", body: JSON.stringify({ client_request_id: crypto.randomUUID(), text, dataset_ids: datasetIds, profile_id: profileId }) });
@@ -71,6 +71,18 @@ export class ApiClient {
   clearCredential(profileId: string): Promise<ModelProfile> { return this.request(`/model-profiles/${profileId}/credential`, { method: "DELETE" }); }
   probeProfile(profileId: string): Promise<{ ok: boolean; code?: string }> { return this.request(`/model-profiles/${profileId}/test`, { method: "POST", body: "{}" }); }
   geoSource(sourceId: string): Promise<GeoSourceState> { return this.request(`/geo/sources/${encodeURIComponent(sourceId)}`); }
+  createGeoSearch(payload: GeoSearchRequest): Promise<GeoSearchState> { return this.request("/geo/searches", { method: "POST", body: JSON.stringify(payload) }); }
+  private geoSearchPath(searchId: string, suffix = "", conversationId?: string): string {
+    return `/geo/searches/${encodeURIComponent(searchId)}${suffix}${conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : ""}`;
+  }
+  geoSearch(searchId: string, conversationId?: string): Promise<GeoSearchState> { return this.request(this.geoSearchPath(searchId, "", conversationId)); }
+  nextGeoSearchPage(searchId: string, pageToken: string, revision: number, conversationId?: string): Promise<GeoSearchState> {
+    return this.request(this.geoSearchPath(searchId, "/pages", conversationId), { method: "POST", body: JSON.stringify({ page_token: pageToken, revision }) });
+  }
+  selectGeoSearchResult(searchId: string, accession: string, revision: number, conversationId?: string): Promise<GeoSearchState> {
+    return this.request(this.geoSearchPath(searchId, "/selection", conversationId), { method: "POST", body: JSON.stringify({ accession, revision }) });
+  }
+  cancelGeoSearch(searchId: string, conversationId?: string): Promise<GeoSearchState> { return this.request(this.geoSearchPath(searchId, "/cancel", conversationId), { method: "POST", body: "{}" }); }
   createGeoImport(sourceId: string, candidateId: string, revision: number): Promise<GeoImportState> {
     return this.request(`/geo/sources/${encodeURIComponent(sourceId)}/imports`, { method: "POST", body: JSON.stringify({ candidate_id: candidateId, revision }) });
   }

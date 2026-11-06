@@ -17,7 +17,8 @@ Bio-Agent 是本地单用户、单 LangGraph 编排器的 bulk RNA-seq 双组分
 | `tools/`、`tool_specs/deseq2.yaml` | 固定工具注册表、参数适配与输出契约，不接受用户指定脚本 |
 | `execution/r_runner.py`、`r/deseq2/` | 参数数组、固定 R 入口、独立工作目录、超时、日志；DESeq2 统计与绘图 |
 | `reporting/` | 从已验证 artifact 构建摘要，使用自动转义模板生成确定性 HTML；可选叙述器受事实句式约束 |
-| `geo/` | NCBI GEO 元数据发现、受限下载、显式样本映射、来源缓存和 source/dataset 绑定 |
+| `geo/` | `DatasetCatalogProvider` 的 NCBI GEO keyword catalog、受限 GSE 精确发现/下载、显式样本映射、来源缓存和 source/dataset 绑定 |
+| `retrieval/knowledge.py` | 与 Dataset catalog 完全分离的未来 `KnowledgeRetriever` 契约；默认 `NullKnowledgeRetriever` 只返回 `RAG_NOT_CONFIGURED`，不提供知识搜索动作、文档摄取或统计输入 |
 | `extensions/` | 本地 Skill 快照、MCP stdio/Streamable HTTP 适配、工具 schema/policy、一次性批准和不可信结果摘要 |
 | `artifacts/`、`storage/` | 受控路径、manifest 原子写入、独立 SQLite checkpoint 与 API run 索引 |
 
@@ -116,7 +117,7 @@ runs/<run_id>/
 └── manifest.json
 ```
 
-manifest 保存 run/dataset/attempt ID、批准的 revision/hash、输入 SHA-256、工具、Git commit、比较方向、alpha、shrink、随机种子、时间、状态、QC、审批记录及产物相对路径与哈希。若分析来自 GEO，manifest 还保存来源 ID 和 source artifact 记录；旧的无来源 manifest 仍可读取。当前默认 API 的 `software_versions` 取自 `renv.lock` 中的 R/DESeq2 版本；实际加载的 R 和包版本记录在 `results/session_info.txt`，复现时需一起检查。Git commit 也不能表示工作区未提交改动，因此发布演示要记录实际 checkout 状态。
+manifest 保存 run/dataset/attempt ID、批准的 revision/hash、输入 SHA-256、工具、Git commit、比较方向、alpha、shrink、随机种子、时间、状态、QC、审批记录及产物相对路径与哈希。若分析来自 GEO，manifest 还保存来源 ID 和 source artifact 记录；若来源来自已验证 catalog 选择，还保存可选 `search_provenance`（search ID、query/evidence hash、provider、accession、selection revision、检索时间）。Controller 只能从已校验的 `source/source.json` 取得该值，不能信任模型、API 或前端字段；旧的无来源或无搜索 provenance manifest 仍可读取。当前默认 API 的 `software_versions` 取自 `renv.lock` 中的 R/DESeq2 版本；实际加载的 R 和包版本记录在 `results/session_info.txt`，复现时需一起检查。Git commit 也不能表示工作区未提交改动，因此发布演示要记录实际 checkout 状态。
 
 输入哈希针对原始文件字节；metadata 重排与全零 feature 移除是确定性步骤并记录 QC 事件。跨操作系统复现重点是统计结果及其数值容差，不能要求带运行时间、UUID 的 manifest 或图像文件跨次运行逐字节相同。
 
@@ -128,7 +129,7 @@ Controller 将输入快照和获批计划也登记在 `manifest.artifacts`，因
 
 报告节点将 manifest 与当前工作流的 run、dataset、attempt、plan revision、规范化 plan hash 和 QC 逐项核对，并重新验证全部登记产物的 SHA-256。只有证据匹配才从当前 attempt 的结果构建 HTML，再将报告登记回 manifest。身份或证据失配、生成或写入失败均返回 `FAILED` 与 `REPORT_FAILED`，不会完成成功报告路径。
 
-GEO 来源在创建 run 时完成 source/dataset 一致性检查并复制；R 执行前、完成态复用和 API 重启恢复都会重算来源文件哈希。来源缓存或 run 副本被篡改时，执行会拒绝复用并保留诊断。下载 API 只接受由 manifest 记录计算出的不透明 artifact ID。
+GEO catalog 搜索、GEO 精确发现/下载与知识检索是三个独立边界：catalog 命中不证明 raw counts，知识 evidence 也不能成为 Dataset 或统计输入。搜索选择先持久化受控 `SELECTING` 快照；source 创建和原子发布分别重读该快照及最终 `SELECTED` 快照，逐字段验证 provenance。读取带 provenance 的 GEO source、R 执行前、完成态复用和 API 重启恢复也都会重读权威 `SELECTED` 快照，而非只信任 source/run 副本中可重算的 hash；来源缓存或 run 副本被篡改时，执行会拒绝复用并保留诊断。下载 API 只接受由 manifest 记录计算出的不透明 artifact ID。
 
 默认 API 生成确定性 HTML。报告模块另有可选 LLM 叙述器，但默认依赖装配不启用它；它仅允许基于已验证摘要的规定事实句式，不允许补充统计数字、未执行方法或临床/因果结论。LLM 不可用不会使确定性报告失去统计内容。
 

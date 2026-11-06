@@ -19,6 +19,7 @@ from bioagent.artifacts.paths import validate_artifact_relative_path
 from bioagent.domain.plans import Comparison
 from bioagent.domain.qc import QCReport
 from bioagent.domain.runs import RunStatus
+from bioagent.geo.models import GeoSearchProvenance
 from bioagent.workbench.models import TurnModelSnapshot
 
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
@@ -159,6 +160,7 @@ class RunManifest(_FrozenValidatedModel):
     artifacts: tuple[ArtifactRecord, ...] = Field(default_factory=tuple)
     source_id: UUID | None = None
     source_artifacts: tuple[ArtifactRecord, ...] = Field(default_factory=tuple)
+    search_provenance: GeoSearchProvenance | None = None
     agent_context: AgentContext | None = None
 
     @field_validator("source_artifacts")
@@ -241,6 +243,8 @@ class RunManifest(_FrozenValidatedModel):
                 raise ValueError("source artifacts must be registered in artifacts")
         if self.source_id is not None and not self.source_artifacts:
             raise ValueError("source runs must register source artifacts")
+        if self.search_provenance is not None and self.source_id is None:
+            raise ValueError("search provenance requires a source ID")
         return self
 
 

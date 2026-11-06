@@ -1,19 +1,19 @@
 # Bio-Agent 当前状态
 
-**最后更新：** 2026-09-14
+**最后更新：** 2026-10-12
 
 **当前分支：** `agent/bio-agent-mvp`
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task 16–33 已全部完成；2026-09-14 又完成一次全项目运行审计，并修复生产静态资源、窄屏项目入口、项目选择、扩展页签、运行完成刷新和 MCP 配置编辑问题。真实模型 API/真实 GEO 公网下载仍按用户要求留待本地配置后联调；Task 15 的旧远端发布状态独立保留。
+**当前阶段：** Task 16–37 已实现并通过本次验证。Task 37 规划文档提交为 `dbf7877`，实现提交见当前 Git HEAD；任务限定为模型设置入口和统一当轮调用，不新增统计范围。真实模型 API/真实 GEO 公网验收和 Task 15 发布收尾独立保留。
 
 ## 恢复工作时先做什么
 
 1. 进入 `.worktrees/bio-agent-mvp`。
 2. 阅读根目录 `AGENTS.md`、已批准设计、实施计划和本文件。
 3. 运行 `git status --short --branch` 和 `git log -5 --oneline`。
-4. 阅读下文“下一阶段设计与计划”；Task 16–33 均已完成，继续修改前先依据用户的新目标补充或更新规格与计划。
+4. 当前仅执行 Task 37，规格与实施计划为 `2026-10-12-model-settings-design.md` 和 `2026-10-12-model-settings.md`；提交后停止，不自动领取下一任务。Task 34/35 的旧复选框与工作台指南已按提交证据同步。
 5. 自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过；保留 Task 15 的历史发布记录。
 
 ## 已完成
@@ -567,19 +567,76 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 
 设计采用 React/TypeScript + FastAPI 同源工作台、REST/SSE 事件、独立对话存储和 turn 队列；API Key 使用系统凭据存储/环境引用，切换模型只影响新轮次。GEO 下载、样本确认、source/dataset 绑定和 run provenance 已通过 Task27；Skill/MCP 不具有替代分析审批的权限。
 
+2026-09-14 用户批准 [GEO 关键词搜索、下载衔接与 RAG 扩展设计](../superpowers/specs/2026-09-14-geo-search-rag-design.md)，选择第一版只实现 GEO 关键词搜索，并把符合现有 raw counts 合约的数据接入 bulk RNA-seq 双组 DESeq2；同时预留独立 `KnowledgeRetriever`，本阶段不实现知识库。对应 [Task 34–36 实施计划](../superpowers/plans/2026-09-14-geo-search-rag.md) 现已完成；公网调用继续使用 Mock，不读取真实 Key。后续功能扩展需重新获得明确授权。
+
 规格准备会话仅新增规格/计划并更新进度；基线统计修复为 `0b14036`，其 Python 359 passed/1 skipped、R 37 passed 是此前实际验证结果，不是新功能验收。该会话的文档检查结果在本节记录；任务 16 的实现与测试结果见上文独立记录。
 
 文档验收：六份文档的 15 个相对链接全部存在，编号任务恰为 16–33；24 段 Python 示例通过 AST 语法解析，24 段 PowerShell 示例通过原生 Parser 检查，无占位符扫描命中。规格覆盖与字段自检修正了 ArtifactRecord.relative_path、Skill 引用组合 hash 和 GEO 下载/映射顺序。八项 pre-commit hooks 通过，暂存 diff 检查通过。仅做文档语法/一致性检查，未执行计划中的未来代码示例，也未重跑未改动的统计实现。
 
+## Task 34 GEO 搜索 provider、状态服务与 API
+
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、`agent/bio-agent-mvp` 分支；保留用户已有的 `renv/activate.R` 空白修改，未恢复、格式化、暂存或提交。
+- TDD 红灯先新增本地 `MockTransport` provider fixture、搜索服务与 API 测试。provider 首次收集失败为 `ModuleNotFoundError: bioagent.geo.search`；服务/API 首次收集失败为 `ModuleNotFoundError: bioagent.geo.search_service`，均对应尚未实现的 Task 34 模块。首次 sandbox 因 uv 缓存 ACL 被拒，获准使用现有本地离线缓存后完成测试；未访问公网、真实 GEO、模型或 Key。
+- 新增冻结的 retrieval 查询/证据/命中/分页契约、NCBI ESearch→ESummary provider、原子搜索快照仓库与独立 2 worker/16 queued 搜索服务。查询只生成受控 Entrez 参数，业务文本转义引号/括号/反斜杠；结果仅接受、稳定去重合法 GSE，并构造官方 NCBI HTTPS 证据 URI。eutils 主机加入既有 DNS 固定 allowlist，搜索实例禁用跳转。
+- 搜索状态保存至 `data/searches/<uuid>/search.json`，恢复时只将 `QUEUED/SEARCHING` 标记为 `FAILED/GEO_SEARCH_PROCESS_RESTARTED`；分页 token 为已签发且搜索 query hash 绑定的服务端 opaque token。选择校验 revision 与快照归属后仅调用注入的 `GeoImportService.create_source`，不接触下载器；factory 失败不写入 `SELECTED`。
+- 新增五个 `/api/v1/geo/searches` 端点，沿用 local-host/CSRF 约束；容器启动/关闭搜索服务。事件仅投影搜索 ID、状态、revision 与结果数。
+- 验证：`uv run --offline pytest tests/unit/geo/test_geo_search.py tests/unit/geo/test_geo_search_service.py tests/integration/api/test_geo.py tests/integration/test_geo_transport.py -q -p no:cacheprovider` 为 **29 passed in 4.38s**；`uv run --offline ruff check .` 为 **All checks passed**（仅 uv cache ACL warning）；`uv run --offline mypy src` 为 **Success: no issues found in 78 source files**。下一编号任务为 **Task 35：Agent 搜索动作、事件衔接、搜索结果界面和现有 source discovery 复用**。
+- Task 34 审查修复：provider 先检查 `Content-Length`，再以流式字节累计限制 2 MiB，避免通过 `.content` 无界物化响应；搜索 owner 改为服务端签名的 HttpOnly/SameSite cookie，并与持久化 conversation/turn 对照，未拥有 search 的读写统一返回 404；搜索状态改为 `GeoSearchStatus` `StrEnum`。新回归覆盖声明超限零读取、chunked 超限在阈值停止、跨客户端未拥有的读写 404 和状态枚举。修复验证：同一 pytest 命令为 **31 passed in 4.48s**；Ruff 为 **All checks passed**（仅 uv cache ACL warning）；mypy 为 **Success: no issues found in 78 source files**。未访问公网、真实 GEO、模型或 Key。
+- Task 34 所有权恢复修复：第一次创建搜索时生成高熵 HttpOnly/SameSite browser owner token，后续创建沿用该 cookie；每个 search snapshot 仅保存其 SHA-256，读写按 hash 比较，原 token 不进入 JSON、事件、日志、manifest 或 API 请求字段。所有者可以同时访问多个 search，使用同一 data/workbench state 的新 app/container 后仍可恢复访问；没有该 cookie 的另一客户端继续统一得到 404。红灯先确认旧 cookie 覆盖导致第一个 search 404；修复验证：同一 pytest 命令为 **32 passed in 4.64s**；Ruff 为 **All checks passed**（仅 uv cache ACL warning）；mypy 为 **Success: no issues found in 78 source files**。未访问公网、真实 GEO、模型或 Key。
+
+## Task 35 Agent 搜索动作与搜索结果界面
+
+- 会话在 `.worktrees/bio-agent-mvp` 的 `agent/bio-agent-mvp` 分支执行；用户已有的 `renv/activate.R` 空白改动保持未恢复、未格式化、未暂存或提交。
+- TDD：先为严格的 `dataset_search` 动作和 Agent 搜索轮次新增测试。首次后端定向运行如预期失败（动作未知、turn 为 `FAILED` 而非等待选择）；首次前端组件测试如预期因模块不存在而失败。随后新增的 Agent 搜索读取回归先复现浏览器所有权检查返回 404，再转绿。
+- `DatasetSearchAction` 仅接受受限的检索字段，不接受 URL、路径或额外字段；`ToolLoop` 和受限 GEO 工具目录将其作为终止动作。`TurnService` 经受控依赖注入创建 `DatasetSearchQuery`，保存 nullable `Conversation.geo_search_id`，投影 `geo.search.updated`/`geo.search.selected` 事件并要求用户选择结果；GSE 编号路径继续使用既有 `geo_lookup`。搜索不下载数据、不创建分析运行。
+- 为恢复 Agent 创建的搜索，API 仅在没有 GEO browser-owner cookie 时接受受控 `conversation_id`，并同时核验 HttpOnly workbench owner cookie 的持久化 hash、`conversation.geo_search_id` 与 search record 的 `conversation_id`；直接从浏览器创建的搜索仍要求其原有 HttpOnly owner cookie，跨客户端读、分页、选择和取消均为 404。选择成功后复用既有 source discovery，保留 search ID 供后续 provenance。
+- 前端新增服务端状态驱动的搜索结果卡与 API client：纯文本渲染不可信标题/摘要，官方链接固定 `target="_blank" rel="noreferrer"`，选择按钮为“检查可分析文件”，`NEEDS_INSPECTION` 明示仍需检查 raw counts；分页、取消与重试均使用服务端 revision/token，SSE 或重载按 conversation 的 search ID 恢复状态。
+- 独立审查先发现 Agent search 仅按无 owner token 放行会暴露给知道 UUID 的其他客户端；已改为 conversation owner hash 绑定并补跨客户端 404、错误 conversation 与重启持久性回归，复审无 Critical/Important。
+- 提交前验证：`uv run --offline pytest tests/unit/workbench tests/integration/api/test_workbench_tools.py tests/integration/api/test_geo.py -q -p no:cacheprovider` 为 **61 passed in 6.29s**；`npm --prefix frontend run test -- --run` 为 **16 files / 32 tests passed**；前端 `typecheck` 与生产 `build` 退出 0；`uv run --offline ruff check .` 为 **All checks passed**（仅 uv cache ACL warning）；`uv run --offline mypy src` 为 **Success: no issues found in 79 source files**。所有测试使用 Mock；未访问公网、真实 GEO、模型或 Key。
+- 下一编号任务为 **Task 36：搜索 provenance、RAG 接口与端到端验收**；本任务未开始 Task 36。
+
+## Task 36 搜索 provenance、RAG 接口与端到端验收
+
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、`agent/bio-agent-mvp` 分支和用户已有的 `renv/activate.R` 空白改动；该文件全程未恢复、格式化、暂存或提交。
+- TDD 红灯：`uv run --offline pytest tests/unit/retrieval/test_knowledge.py tests/unit/geo/test_geo_search_service.py tests/unit/geo/test_geo_repository.py tests/unit/artifacts/test_manifest.py -q -p no:cacheprovider` 在实现前以 4 个收集错误失败，分别为缺少 `bioagent.retrieval.knowledge` 与 `GeoSearchProvenance`；这是新契约尚不存在的预期失败。实现后同一聚焦集合为 **51 passed in 1.96s**，未访问公开 GEO、模型或 Key。
+- 新增独立、冻结且 `extra=forbid` 的 `KnowledgeQuery`、`KnowledgeEvidence`、`KnowledgeRetriever`、`KnowledgeRetrievalError` 与默认 `NullKnowledgeRetriever`。证据要求 document/chunk/无凭据 HTTPS source URI 和 64 位 SHA-256；user-info、HTTP 和 `token`/`key`/`authorization` 等敏感 query 字段稳定拒绝。未配置时稳定返回 `RAG_NOT_CONFIGURED`。它不解析为 `DatasetSearchQuery` 或工作台 action，依赖容器只允许显式 override，不增加知识动作、向量库、上传或凭据表。
+- 搜索结果选择时由已认证搜索快照生成冻结 `GeoSearchProvenance`（search ID、query/evidence hash、provider、accession、selection revision、检索时间）。搜索服务先持久化 `SELECTING` snapshot；`GeoImportService.create_source()` 必须从共享 `GeoSearchRepository` 逐字段重读这个 snapshot，`GeoRepository.publish()` 又必须从最终 `SELECTED` snapshot 逐字段重读。这样篡改 source state 后重新计算自洽 hash 仍会在 dataset 发布前拒绝，直接伪造 provenance 也不能成为 source。随后才写入 `source.json` 及规范 JSON SHA-256，读取时仍重新验证。直接 GSE 与上传来源继续没有 provenance，旧 manifest 以 `None` 读取。
+- `AnalysisService` 仍先以 `GeoRepository.read()` 验证 source，再复制唯一的受控 `source.json` 到 run；`ExecutionController` 在 execution key、执行、复用和恢复前校验 source artifact hash、source/dataset ID、provenance accession 及 hash，并以容器注入的同一 `GeoSearchRepository` 重读权威 `SELECTED` 搜索快照。它只把该只读验证值写入 `RunManifest.search_provenance`；篡改 selection/accession、query/evidence 或 provenance hash（即使攻击者同时重算自洽 hash）稳定拒绝 `SOURCE_SEARCH_PROVENANCE_TAMPERED`，不会调用 runner。
+- 新增本地 `httpx.MockTransport` + 合成 counts 的 Python e2e：搜索快照 → 选择 GSE → source → dataset → run manifest 的 ID/hash 链一致，raw counts/mapping 确认前没有下载、计划批准前没有 attempt，且 RAG 未配置不会影响 GEO。它为 **1 passed in 14.35s**。Task36 聚焦回归（`tests/unit/retrieval tests/unit/geo tests/e2e/test_geo_search_workflow.py tests/e2e/test_geo_workflow.py`）通过；Ruff 为 **All checks passed**，mypy 为 **Success: no issues found in 80 source files**。
+- 新增 Playwright route-fixture 流程，覆盖关键词输入、候选、选择、raw-count 确认、映射、批准和 COMPLETED；选择前断言 import/download 请求为零。`npm --prefix frontend run e2e -- --grep "keyword GEO search"` 为 **1 passed (2.4s)**；Vitest **16 files / 32 passed**，typecheck 与 production build 通过。
+- 完整 `./scripts/check.ps1` 已退出成功；前端安装、Vitest、typecheck、build、完整 Playwright、Ruff、mypy、Python/R/DESeq2 分项与 renv 同步检查均已执行。`uv run --offline pre-commit run --all-files` 的 8 个 hooks 全部通过。测试只使用本地 fixture、MockTransport、route fixture 与合成 counts；没有真实 GEO 下载、真实模型或 Key。
+- Task36 复审修正：先新增 credential-bearing URI、直接伪造 provenance、source state 篡改和完整 source→dataset→manifest 链回归；修正前聚焦集合为 **8 failed, 29 passed in 13.88s**（URI 规则缺失，且测试也暴露了未完成的 provenance 权威边界）。修正后 `tests/unit/retrieval/test_knowledge.py tests/unit/geo/test_geo_service.py tests/unit/geo/test_geo_search_service.py tests/unit/geo/test_geo_repository.py tests/e2e/test_geo_search_workflow.py` 为 **46 passed in 14.06s**；Ruff/mypy（80 个 source files）通过，关键字 GEO Playwright fixture 为 **1 passed in 2.6s**。完整门禁复跑结果见本任务提交记录；仍未访问公网或凭据。
+- Task36 最终复审修正：TDD 先把已发布 `source.json` 的 `query_hash` 改写并重算 `search_provenance_sha256`，再经真实 `AnalysisService.create_run()`，红灯为 **1 failed in 17.02s**（未抛 `GeoRepositoryError`）；另一个 Controller 回归先因缺少显式 `search_repository` 依赖红灯。`GeoRepository.read()` 现在对非空 provenance 重读持久化 `SELECTED` snapshot，`ExecutionController` 也通过依赖容器取得同一仓库并在执行、复用/恢复前逐字段验证。修正后两条回归为 **2 passed in 17.20s**；包含 controller、GEO repository/search、RAG、manifest、直接 GSE API、本地 upload 和两条 GEO e2e 的离线集合共 **102 tests collected**，运行至完成且无失败（退出 0）。Ruff 与 mypy（80 个 source files）通过，关键字 GEO Playwright route fixture 为 **1 passed (2.4s)**；不访问公网、真实模型或 Key。
+- Task36 最终双重独立审查又发现 API 启动恢复未重读权威搜索快照、删除 provenance 可降级为直接 GSE、另一条真实搜索快照可跨 source 替换，以及 evidence URI 对预签名/fragment 凭据覆盖不足。TDD 红灯分别覆盖启动恢复伪造、缺失/替换 provenance 和 URI 变体；修正后搜索快照以 `source_id` 绑定，发布、读取、导入、AnalysisService、Controller 与启动恢复均失败关闭，直接 GSE/上传仍兼容。合并相关回归为 **187 passed in 67.67s**；Ruff 为 **All checks passed**，mypy 为 **Success: no issues found in 80 source files**。测试只用本地 fixture，`renv/activate.R` 仍未暂存或修改。
+- Task36 提交后质量复审补出一个恢复一致性问题：重启时持久化的 `SELECTING` 记录改为 `FAILED` 后仍保留 selection 字段，导致后续读取报 `GEO_SEARCH_STATE_INVALID`；同时补齐依赖覆盖下的搜索仓库绑定，以及 `X-Amz-Security-Token`、`session_token`、`refresh_token` 三类 evidence URI 凭据名。三个红灯场景修复前为 **5 failed, 12 passed**，最小修复后为 **17 passed**；最终受影响合并回归为 **195 passed in 82.33s**，Ruff 与 mypy（80 个 source files）通过。恢复后的记录可跨再次重启读取，覆盖的 `GeoRepository` 使用容器同一权威搜索仓库。
+
+## Task 34–36 整体复盘
+
+- 受控搜索、受控选择和既有下载/映射/分析审批保持三段式：搜索文本、标题和摘要不可信，搜索本身不能创建 import 或 run；只有选中的、所属及 revision 已验证的 GSE 才能进入 source discovery，raw-count 与人工计划审批仍是不可绕过的关口。
+- 选择 provenance 由后端快照生成并在 source/run 两端校验 hash，读取、执行、复用和恢复还逐字段重读权威 `SELECTED` snapshot；query、selection revision、accession 或 evidence 被替换并重算自洽 hash 时也不会复用来源或执行。直接 GSE、上传和旧 manifest 保持兼容。
+- `DatasetCatalogProvider` 只服务数据目录搜索；`KnowledgeRetriever` 保持独立且当前显式未配置。证据或 manifest 不保存凭据，没有新增统计方法、自动批准、真实账户调用或多 Agent 编排。
+
 ## 新会话启动提示词
 
 ```text
-扩展计划任务 28–33 已完成。进入既有 .worktrees/bio-agent-mvp，确认
+扩展计划任务 28–37 已完成。当前没有已授权的下一编号任务。进入既有 .worktrees/bio-agent-mvp，确认
 agent/bio-agent-mvp 分支，按 AGENTS.md 读取设计/计划/进度及 Git 状态。
 随后读取 2026-09-08-extensions-design.md 和 2026-09-08-extensions.md。
 任务 28–33 已完成本地 Skill、MCP stdio/Streamable HTTP 客户端、工具 policy/schema/一次性批准、
 对话工具循环、扩展设置与调用确认卡、端到端恢复和使用文档；真实模型 API/账户联调由用户后续明确配置。
-自动模型测试用 Mock，不读取真实 Key；不得提前扩大到计划外的功能范围。
+GEO 搜索 Task 34–36 已实现受控检索、Agent/UI 衔接、选择 provenance 与 RAG 空接口；自动模型和 GEO 测试继续用 Mock，不读取真实 Key。任务 37 规格和计划为 2026-10-12-model-settings-design.md / 2026-10-12-model-settings.md；已实现并验证，完成后停止。
 保持明确人工审批和原统计执行边界；不要回改已完成的任务 28–33。
 如需继续，先获得用户明确授权再做真实 API/账户联调；保留旧 PR Draft，不推送、不合并、不新建 worktree。
 ```
+
+## Task 37 模型设置与统一调用
+
+- 已读取权威资料、确认既有 worktree 和 `agent/bio-agent-mvp` / `24374c9`；保留父任务交接规格与进度。`renv/activate.R` 为用户原有空白改动，不恢复、不暂存、不提交；根目录 main 的 `runs/` 未操作。
+- 使用 writing-plans 制定单编号任务计划，沿用当前会话执行。模型设置移入“设置 → 模型与 API / Skills / MCP”，保存多个配置、编辑选择与聊天选择独立，对话选择通过既有 PATCH 持久化。异步保存禁重复，凭据成功返回值更新配置状态；失败重读真实配置并提示部分保存风险，不显示伪成功。
+- ModelAdapter 统一装配聊天与 Planner，PreparedChat 只在服务端内存持有同一客户端创建的 Planner；上传规划复用该 Planner，GEO READY 按原 turn 的固定 snapshot 在边界重新解析凭据。每次规划构建独立图，共享 checkpoint/执行依赖，客户端/凭据/闭包不进入状态或科研记录。审批恢复沿用保存的计划，不重选模型；旧无 profile API 与默认 readiness 保留。
+- 生产适配器补齐受限 `plan_analysis` 工具及选中 dataset ID 上下文；动作仍经强类型和数据集所属校验，不能批准或执行分析。GEO 配置删除/凭据缺失通过 `run.updated` 稳定失败事件显示，禁止回退环境模型。
+- TDD：最初后端新增用例为 **1 failed, 6 passed**，发现生产工具目录缺少 plan_analysis；前端为 **1 failed, 3 passed**，复现重复保存没有禁用。随后额外临时移除当轮 Planner 绑定，单条 Ollama 用例稳定红灯 **1 failed, 8 deselected**，表现为环境 Planner 导致 VALIDATION_FAILED；finally 已恢复文件。三个协议均用 Mock、系统凭据库用内存替代，无真实账户调用。
+- 验证中间结果：模型/工作台/上传/GEO 定向 **119 passed**；受影响 API+模型+工作台+GEO e2e **171 passed in 128.12s**；最终协议/审批/readiness 聚焦 **107 passed in 42.08s**。Vitest **16 files / 33 passed**；Playwright **5 passed (6.0s)**（含独立设置、对话记忆、删除恢复入口和窄屏）；typecheck/build、全仓 Ruff 与 mypy（80 source files）通过。最终关键用例（增加审批和默认 readiness 断言、失败规划防伪审批）为 **9 passed in 38.68s**；pre-commit 全仓 **8 hooks passed**。`git diff --cached --check` 曾发现计划 EOF 空行，已修复后退出 0。
+
+- Task37 收尾：规划文档已单独提交 `dbf7877`；实现与使用文档另作任务 37 提交。最终没有新增包、数据库重建或迁移、真实 Key/账户调用、push、merge 或 PR。`/ready` 对没有环境 Key 的旧默认模型仍返回 503，而页面配置的三种 Mock 协议可以完成聊天、上传/GEO 规划及审批；系统凭据库与真实 provider 能力仍需用户自行联调。
+- 保留 `renv/activate.R` 原有未提交改动，收尾核对 SHA-256 为 `A36F28F84219B6B9A89C4E5EB365A0F44D2F01F4FB9CFEDB0940D1CC7D09103A`。提交后 Git 实际状态保留 `M renv/activate.R`；收尾时另出现未跟踪 `docs/research/` 与 `docs/superpowers/specs/2026-10-12-literature-rag-design.md`，属于任务外改动，未读取、修改或暂存。没有下一编号任务授权，停止开发。

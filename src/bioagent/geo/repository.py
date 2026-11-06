@@ -15,7 +15,12 @@ from uuid import UUID, uuid4
 
 import pandas as pd
 
-from bioagent.geo.models import GeoCandidate, GeoSource, SourceSelection
+from bioagent.geo.models import GeoCandidate, GeoSearchProvenance, GeoSource, SourceSelection
+from bioagent.geo.search_repository import (
+    GeoSearchRepository,
+    GeoSearchRepositoryError,
+    GeoSearchStatus,
+)
 from bioagent.geo.transform import NormalizedDataset, selection_hash
 
 
@@ -41,6 +46,7 @@ class GeoSourceRecord:
     selection_hash: str
     revision: int
     dataset_id: str | None = None
+    search_provenance: GeoSearchProvenance | None = None
 
 
 class GeoRepository:
@@ -52,7 +58,9 @@ class GeoRepository:
 
     conversion_version = "1.0"
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self, root: Path, *, search_repository: GeoSearchRepository | None = None
+    ) -> None:
         self._root = root.resolve()
         self._root.mkdir(parents=True, exist_ok=True)
         self._state_root = self._root / ".geo-state"
@@ -62,6 +70,14 @@ class GeoRepository:
         # I/O worker share this repository, so serialize those short critical
         # sections instead of exposing a spurious GEO_SOURCE_NOT_FOUND.
         self._state_lock = RLock()
+        self._search_repository = search_repository
+
+    def bind_search_repository(self, repository: GeoSearchRepository) -> None:
+        """Bind the authoritative search store during dependency assembly."""
+        if not isinstance(repository, GeoSearchRepository):
+            raise TypeError("repository must be a GeoSearchRepository")
+        with self._state_lock:
+            self._search_repository = repository
 
     def write_state(
         self, category: str, identity: UUID | str, payload: Mapping[str, object]
@@ -108,6 +124,7 @@ class GeoRepository:
         etag: str | None = None,
         last_modified: str | None = None,
         dataset_id: str | None = None,
+        provenance: GeoSearchProvenance | None = None,
     ) -> GeoSourceRecord:
         if isinstance(counts, NormalizedDataset):
             normalized = counts
@@ -127,6 +144,13 @@ class GeoRepository:
             raise GeoRepositoryError("SOURCE_CHANGED", "source and candidate IDs do not match")
         if selection.candidate_id != candidate.id:
             raise GeoRepositoryError("SOURCE_CHANGED", "selection and candidate IDs do not match")
+        if provenance is not None:
+            if not isinstance(provenance, GeoSearchProvenance):
+                raise GeoRepositoryError("GEO_SEARCH_PROVENANCE_INVALID")
+            provenance = GeoSearchProvenance.model_validate(provenance.model_dump(mode="python"))
+            if provenance.selected_accession != source.accession:
+                raise GeoRepositoryError("GEO_SEARCH_PROVENANCE_INVALID")
+        self._verify_source_provenance(provenance, source.id)
 
         source_id = source.id
         root = self._resolve(source_id)
@@ -171,6 +195,12 @@ class GeoRepository:
                 "selection": selection.model_dump(mode="json"),
                 "excluded_samples": list(selection.excluded_samples),
                 "conversion_version": self.conversion_version,
+                "search_provenance": (
+                    None if provenance is None else provenance.model_dump(mode="json")
+                ),
+                "search_provenance_sha256": (
+                    None if provenance is None else provenance.provenance_sha256
+                ),
             }
             _write_json_atomic(payload, source_json)
             _write_json_atomic(payload, root / "metadata.json")
@@ -190,6 +220,7 @@ class GeoRepository:
             selection_hash=selection_digest,
             revision=selection.revision,
             dataset_id=dataset_id,
+            search_provenance=provenance,
         )
 
     create = publish
@@ -232,6 +263,18 @@ class GeoRepository:
             dataset_id = payload.get("dataset_id")
             if dataset_id is not None and not isinstance(dataset_id, str):
                 raise ValueError("dataset ID is invalid")
+            raw_geo_source_id = payload.get("geo_source_id")
+            if not isinstance(raw_geo_source_id, str):
+                raise ValueError("GEO source ID is invalid")
+            geo_source_id = _parse_uuid(raw_geo_source_id)
+            search_provenance = _read_search_provenance(payload)
+            # A self-consistent payload hash is not authority: re-read the
+            # immutable selected catalog snapshot before a source can feed a
+            # new run, recovery, or completed-run reuse.  A selected source
+            # cannot discard its provenance and become a direct GSE source.
+            self._verify_source_provenance(search_provenance, geo_source_id)
+        except GeoRepositoryError:
+            raise
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise GeoRepositoryError(
                 "GEO_SOURCE_CACHE_TAMPERED", "cached source failed verification"
@@ -249,9 +292,26 @@ class GeoRepository:
             selection_hash=selection_digest,
             revision=selection_payload["revision"],
             dataset_id=dataset_id,
+            search_provenance=search_provenance,
         )
 
     get = read
+
+    def _verify_source_provenance(
+        self, provenance: GeoSearchProvenance | None, source_id: UUID
+    ) -> None:
+        if self._search_repository is None:
+            if provenance is not None:
+                raise GeoRepositoryError("GEO_SEARCH_PROVENANCE_INVALID")
+            return
+        try:
+            self._search_repository.verify_source_provenance(
+                provenance,
+                source_id=source_id,
+                expected_status=GeoSearchStatus.SELECTED,
+            )
+        except GeoSearchRepositoryError as error:
+            raise GeoRepositoryError("GEO_SEARCH_PROVENANCE_INVALID") from error
 
     def find_cached(self, accession: str, url: str, raw_sha256: str) -> GeoSourceRecord | None:
         for directory in sorted(self._root.iterdir(), key=lambda item: item.name):
@@ -317,6 +377,21 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _read_search_provenance(payload: Mapping[str, object]) -> GeoSearchProvenance | None:
+    raw = payload.get("search_provenance")
+    stored_hash = payload.get("search_provenance_sha256")
+    if raw is None and stored_hash is None:
+        return None
+    if not isinstance(raw, dict) or not isinstance(stored_hash, str):
+        raise ValueError("search provenance is invalid")
+    provenance = GeoSearchProvenance.model_validate(raw)
+    if provenance.selected_accession != payload.get("accession"):
+        raise ValueError("search provenance accession mismatch")
+    if provenance.provenance_sha256 != stored_hash:
+        raise ValueError("search provenance hash mismatch")
+    return provenance
 
 
 def _copy_atomic(source: Path, target: Path) -> None:

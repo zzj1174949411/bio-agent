@@ -29,7 +29,7 @@ uv python install 3.12
 uv sync --frozen --dev
 Rscript -e "renv::restore(prompt = FALSE)"
 Rscript -e 'stopifnot(isTRUE(renv::status()$synchronized))'
-Copy-Item .env.example .env
+# 可选旧 API 配置：仅无已有 .env 时 Copy-Item .env.example .env
 ```
 
 首次从项目目录运行 Rscript 时，`.Rprofile` 使用提交的 `renv/activate.R` 引导安装项目所需 renv。若自动引导受网络策略阻挡，先按网络错误修复源或代理，再重新执行恢复。不要通过全局更新包来绕过锁文件。
@@ -81,12 +81,16 @@ git switch agent/bio-agent-mvp
 uv sync --frozen --dev
 Rscript -e 'renv::restore(prompt = FALSE)'
 Rscript -e 'stopifnot(isTRUE(renv::status()$synchronized))'
-cp .env.example .env
+# 可选旧 API 配置：仅无已有 .env 时 cp .env.example .env
 export R_LIBS="$(Rscript -e 'cat(renv::paths$library())' | tail -n 1)"
 Rscript -e 'stopifnot(as.character(getRversion()) == "4.5.2"); library(DESeq2); library(apeglm); stopifnot(capabilities("png"))'
 ```
 
 ## 配置模型与启动
+
+正常使用 React 工作台：先执行 `npm --prefix frontend ci` 和 `npm --prefix frontend run build`，启动下面的 API 后打开 http://localhost:8000/。在“设置 → 模型与 API”新增配置，填写名称、接口协议、API Base URL、API Key 和模型 ID，再返回聊天选择使用。支持 OpenAI 兼容 Chat Completions、DeepSeek、Ollama（无需 Key）。页面保存即时生效，对话选择可恢复，不需要编辑 `.env` 或重启；旧配置不会被覆盖。详见 [工作台指南](workbench.md)。
+
+以下环境配置仅供旧 Streamlit 与无 profile 的 API 使用，也会作为可选只读配置出现在工作台设置中：
 
 保留已有 `.env`，仅首次安装时从示例复制。用编辑器在本地文件设置：
 

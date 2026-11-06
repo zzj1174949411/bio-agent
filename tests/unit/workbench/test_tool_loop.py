@@ -4,10 +4,12 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from bioagent.extensions.gateway import ApprovalRequired
 from bioagent.extensions.models import McpCallResult, SkillSnapshot
 from bioagent.extensions.policy import ToolPolicy
+from bioagent.workbench.actions import parse_action
 from bioagent.workbench.models import Message, TurnModelSnapshot, TurnStatus, WorkbenchError
 from bioagent.workbench.store import WorkbenchStore
 from bioagent.workbench.tool_loop import ToolLoop, TurnBudget, TurnBudgetExceeded
@@ -225,6 +227,38 @@ def test_tool_result_is_untrusted_and_bounded_and_failures_are_not_retried():
 
 def test_tool_loop_is_async_api():
     assert asyncio.iscoroutinefunction(ToolLoop.run)
+
+
+def test_dataset_search_action_is_strict_and_stops_tool_loop():
+    action = parse_action(
+        {
+            "kind": "dataset_search",
+            "text": "AD brain RNA-seq",
+            "organism": "Homo sapiens",
+        }
+    )
+    assert action.kind == "dataset_search"
+    with pytest.raises(ValidationError):
+        parse_action(
+            {
+                "kind": "dataset_search",
+                "text": "AD brain RNA-seq",
+                "url": "https://example.invalid/catalog",
+            }
+        )
+
+    async def stream(_messages):
+        yield action.model_dump(mode="json")
+
+    result = asyncio.run(
+        ToolLoop(_Gateway(), _Skills(())).run(
+            stream,
+            _messages(),
+            conversation_id=str(uuid4()),
+            turn_id=str(uuid4()),
+        )
+    )
+    assert result.outputs == (action,)
 
 
 def test_tool_loop_can_forward_text_chunks_without_buffering():
