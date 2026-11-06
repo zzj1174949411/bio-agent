@@ -14,6 +14,14 @@ Bio-Agent MVP 面向本地单用户科研演示。当前没有身份认证、用
 
 GEO 来源也经过同一受控路径和哈希边界。只接受单个规范化 GSE 编号，候选 URL 由固定 NCBI 主机 allow-list 和逐跳网络校验决定；模型不能提供下载地址。`UNKNOWN` 文件必须由用户确认 raw counts，且仍需用户确认 feature/sample 列、GSM 映射、分组和比较方向。分析创建前会校验 source 与 dataset 的绑定，并复制 raw、source.json 和 normalized 输入；manifest 登记每份来源副本的 SHA-256，恢复或复用前重新验证。来源或 run 副本损坏会拒绝执行。
 
+## Skills 与 MCP
+
+Skills 只从用户配置的本地绝对根目录读取一级 `SKILL.md` 和受限文本引用；不跟随逃逸 symlink、不执行同目录脚本、不展开凭据模板。内容 hash 与引用快照绑定，文件改变后必须重新启用。MCP 仅支持用户明确保存的 stdio `executable`/`argv`/`cwd` 或 Streamable HTTP endpoint；应用不从聊天、Skill 或数据库文件生成命令，也不自动下载程序。
+
+MCP 凭据使用独立的 `mcp:` 引用命名空间，值只进入连接过程，不进入模型 Key、日志、事件、checkpoint、manifest 或统计产物。工具目录初始 `CONFIRM`；MCP 自报的 read-only 不能授予执行权限，`ALLOW_READ` 仍需用户审阅名称、目标、schema 和数据去向。批准绑定参数 hash、schema/capability revision、turn 和 10 分钟期限，只能消费一次；旧 revision、过期、拒绝、重复或重启后的批准均拒绝。
+
+工具输出是不可信数据：界面按文本显示并折叠原始结果，模型上下文只接收带来源标签且有大小上限的摘要。调用超时、取消、连接断开或“已发出但结果未保存”统一记录稳定错误；`TOOL_OUTCOME_UNKNOWN` 不自动重试。取消不能承诺回滚远端副作用，统计 run 仍只能由原有 DESeq2 计划/人工审批/确定性 QC 改变。退出时只清理本应用创建的 stdio 子进程，不终止用户预先启动的服务。
+
 这些措施约束应用入口，不意味着宿主机是隔离沙盒。R 包和仓库代码仍以当前操作系统用户权限运行。SHA-256 用于一致性检查，不是防篡改签名；有宿主机写权限的人仍可能同时改写文件与证据。
 
 ## 上传限制

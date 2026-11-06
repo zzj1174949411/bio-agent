@@ -17,12 +17,14 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bioagent.api.dependencies import build_dependencies
+from bioagent.api.extension_routes import router as extension_router
 from bioagent.api.geo_routes import router as geo_router
 from bioagent.api.local_access import LocalAccessMiddleware, is_workbench_path
 from bioagent.api.model_routes import router as model_router
 from bioagent.api.routes import router
 from bioagent.api.workbench_routes import router as workbench_router
 from bioagent.config import Settings
+from bioagent.extensions.policy import ExtensionError
 from bioagent.models.profiles import ModelError
 
 
@@ -87,6 +89,10 @@ class FrontendStaticFiles(StaticFiles):
                 raise
             response = await super().get_response("index.html", scope)
         if response.status_code == 200:
+            if Path(path).suffix.lower() in {".js", ".mjs"}:
+                # Windows may register JavaScript as text/plain. ES modules are
+                # blocked by browsers unless they have a JavaScript MIME type.
+                response.headers["Content-Type"] = "application/javascript; charset=utf-8"
             content_type = response.headers.get("content-type", "")
             if content_type.startswith("text/html"):
                 response.headers["Cache-Control"] = "no-store"
@@ -115,7 +121,10 @@ def create_app(
             try:
                 yield
             finally:
-                await app.state.dependencies.turn_service.close()
+                try:
+                    await app.state.dependencies.turn_service.close()
+                finally:
+                    await app.state.dependencies.mcp_client.close()
 
     app = FastAPI(title="Bio-Agent API", version="0.1.0", lifespan=lifespan)
     app.state.csrf_token = token_urlsafe(32)
@@ -146,9 +155,49 @@ def create_app(
         code = error.code if error.code in codes else "MODEL_UNAVAILABLE"
         return JSONResponse({"detail": {"code": code}}, status_code=codes.get(code, 503))
 
+    @app.exception_handler(ExtensionError)
+    async def extension_error(request: Request, error: ExtensionError) -> JSONResponse:
+        codes = {
+            "MCP_SERVER_NOT_FOUND": 404,
+            "TOOL_NOT_FOUND": 404,
+            "APPROVAL_NOT_FOUND": 404,
+            "MCP_NOT_CONNECTED": 409,
+            "MCP_SERVER_DISABLED": 409,
+            "MCP_SERVER_REVISION_CONFLICT": 409,
+            "CAPABILITY_REVISION_CONFLICT": 409,
+            "APPROVAL_CONFLICT": 409,
+            "APPROVAL_ALREADY_USED": 409,
+            "TOOL_NAME_COLLISION": 409,
+            "APPROVAL_EXPIRED": 410,
+            "APPROVAL_REVOKED": 410,
+            "TOOL_DENIED": 403,
+            "SCHEMA_INVALID": 422,
+            "SCHEMA_REMOTE_REF": 422,
+            "SCHEMA_TOO_LARGE": 422,
+            "TOOL_ARGUMENTS_INVALID": 422,
+            "TOOL_OUTPUT_INVALID": 422,
+            "ARGUMENTS_INVALID": 422,
+            "APPROVAL_DECISION_INVALID": 422,
+            "SKILL_HASH_REQUIRED": 422,
+            "SKILL_HASH_CONFLICT": 409,
+            "SKILL_ROOT_INVALID": 422,
+            "SECRET_STORE_UNAVAILABLE": 503,
+            "TOOL_OUTCOME_UNKNOWN": 503,
+            "TOOL_IS_ERROR": 502,
+            "TOOL_CANCELLED": 499,
+        }
+        code = error.code if error.code in codes else "EXTENSION_UNAVAILABLE"
+        return JSONResponse({"detail": {"code": code}}, status_code=codes.get(code, 503))
+
     @app.exception_handler(ValueError)
     async def workbench_error(request: Request, error: ValueError) -> JSONResponse:
-        if not request.url.path.startswith("/api/v1/workbench/"):
+        protected_error_path = request.url.path == "/api/v1/extensions" or (
+            request.url.path.startswith(("/api/v1/workbench/", "/api/v1/extensions/"))
+        )
+        if not (
+            request.url.path.startswith("/api/v1/workbench/")
+            or protected_error_path
+        ):
             raise error
         codes = {
             "TURN_BUSY": 409,
@@ -191,6 +240,7 @@ def create_app(
     app.include_router(model_router)
     app.include_router(workbench_router)
     app.include_router(geo_router)
+    app.include_router(extension_router)
 
     @app.api_route(
         "/api",

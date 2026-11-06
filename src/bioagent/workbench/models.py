@@ -99,6 +99,9 @@ class Turn(TimedRecord):
     cancel_requested: bool = False
     input_revision: int = 0
     pending_input: PendingInput | None = None
+    action_count: int = Field(default=0, ge=0, le=8)
+    active_seconds: float = Field(default=0.0, ge=0.0, le=120.0)
+    pending_tool_call: dict[str, JsonValue] | None = None
 
 
 class Message(TimedRecord):

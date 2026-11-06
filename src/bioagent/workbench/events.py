@@ -44,7 +44,11 @@ async def stream_events(
     while True:
         events = store.list_events(conversation_id, after=after, limit=100)
         for event in events:
-            yield encode_sse(event.seq, event.kind, event.payload)
+            yield encode_sse(
+                event.seq,
+                event.kind,
+                {**event.payload, "turn_id": str(event.turn_id)},
+            )
             after = event.seq
             last_activity = clock()
         if len(events) == 100:

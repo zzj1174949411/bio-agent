@@ -27,6 +27,8 @@ from bioagent.workbench.models import (
     WorkbenchError,
 )
 
+_UNSET = object()
+
 # Migrations run one statement at a time: executescript would implicitly commit.
 _MIGRATIONS = (
     (
@@ -423,6 +425,33 @@ class WorkbenchStore:
         with self._transaction() as db:
             original = self._get(db, "turns", turn_id, Turn, "TURN_NOT_FOUND")
             return self._change_turn(db, original, status)
+
+    def update_turn_progress(
+        self,
+        turn_id: UUID | str,
+        *,
+        action_count: int | None = None,
+        active_seconds: float | None = None,
+        pending_tool_call: dict[str, object] | None | object = _UNSET,
+    ) -> Turn:
+        """Persist bounded execution counters without emitting a lifecycle event."""
+
+        with self._transaction() as db:
+            original = self._get(db, "turns", turn_id, Turn, "TURN_NOT_FOUND")
+            data = original.model_dump()
+            if action_count is not None:
+                data["action_count"] = action_count
+            if active_seconds is not None:
+                data["active_seconds"] = active_seconds
+            if pending_tool_call is not _UNSET:
+                data["pending_tool_call"] = pending_tool_call
+            data["updated_at"] = datetime.now(UTC)
+            changed = Turn.model_validate(data)
+            db.execute(
+                "UPDATE turns SET record=? WHERE id=?",
+                (changed.model_dump_json(), str(changed.id)),
+            )
+            return changed
 
     def _change_turn(
         self, db: sqlite3.Connection, original: Turn, status: TurnStatus, **updates: object

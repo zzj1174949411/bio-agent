@@ -1,1 +1,69 @@
-:root{font-family:Inter,system-ui,sans-serif;color:#17211b;background:#f4f6f2}*{box-sizing:border-box}body{margin:0}.app-shell{display:grid;grid-template-columns:240px minmax(0,1fr) 360px;min-height:100vh}.sidebar,.resources{padding:24px;background:#e9eee8;border-right:1px solid #d5ddd3}.resources{border-left:1px solid #d5ddd3;border-right:0}.sidebar h1{margin:0 0 32px;font-size:1.3rem}.sidebar h2{font-size:.75rem;text-transform:uppercase;color:#627064;margin:20px 0 8px}.sidebar form{display:grid;gap:6px;margin-bottom:10px}.sidebar form input,.nav-row input{min-width:0;padding:8px;border:1px solid #b9c7b8;border-radius:7px}.sidebar form button,.nav-row button{border:0;border-radius:7px;padding:7px 8px;cursor:pointer}.sidebar form button{background:#1f6b43;color:#fff}.nav-row{display:flex;gap:4px;align-items:center;margin:3px 0}.nav-row input{width:84px}.nav-item{display:block;flex:1;width:100%;border:0;background:transparent;text-align:left;padding:10px;border-radius:8px;cursor:pointer}.nav-item:hover{background:#dce6db}.conversation{display:flex;min-width:0;flex-direction:column}.conversation>header{display:flex;justify-content:space-between;padding:18px 28px;border-bottom:1px solid #d5ddd3;background:#fff}.conversation>header button{border:0;background:transparent;color:#627064;cursor:pointer}.timeline{flex:1;overflow:auto;padding:28px;max-width:900px;width:100%;margin:auto}.empty{color:#768378;text-align:center;margin-top:20vh}.message{max-width:75%;padding:12px 16px;margin:12px 0;border-radius:14px;background:#fff;box-shadow:0 1px 2px #0000000a}.message.user{margin-left:auto;background:#d9ecd9}.message small{color:#627064}.message p{white-space:pre-wrap;margin:6px 0}.safe-markdown a{color:#1f5f9a}.partial{font-size:.8rem;color:#718071}.composer{display:flex;gap:10px;padding:18px 28px;background:#fff;border-top:1px solid #d5ddd3;flex-wrap:wrap}.composer-tools{display:flex;gap:8px;align-items:end;flex-basis:100%;flex-wrap:wrap}.composer-tools label,.composer-tools fieldset{display:grid;gap:4px;font-size:.78rem}.composer-tools fieldset{border:1px solid #d5ddd3;border-radius:7px}.composer-tools input,.composer-tools select{max-width:180px;padding:7px;border:1px solid #b9c7b8;border-radius:7px}.composer textarea{min-height:72px;resize:vertical;flex:1;min-width:0;border:1px solid #b9c7b8;border-radius:10px;padding:12px;font:inherit}.composer button,.card button{border:0;border-radius:8px;background:#1f6b43;color:#fff;padding:10px 16px;cursor:pointer}.composer button:disabled,.card button:disabled{opacity:.5;cursor:not-allowed}.right-column{background:#eef2ed}.card{margin:20px;padding:18px;background:#fff;border:1px solid #d5ddd3;border-radius:12px}.settings{display:grid;gap:10px}.settings label,.clarification label{display:grid;gap:5px;font-size:.85rem}.settings input,.settings select,.clarification textarea{padding:9px;border:1px solid #b9c7b8;border-radius:7px;font:inherit}.button-row{display:flex;gap:5px;flex-wrap:wrap}.hint{font-size:.78rem;color:#627064}.error{margin:10px 28px;color:#9b2c2c}.report-frame iframe{width:100%;height:180px;border:1px solid #d5ddd3}.resources figure{margin:10px 0}.resources img{max-width:100%;height:auto}.resources section a{display:block;margin:6px 0;color:#1f5f9a}.approval,.clarification{margin:12px 28px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:1199px){.app-shell{grid-template-columns:220px minmax(0,1fr)}.right-column{grid-column:2;border-top:1px solid #d5ddd3;display:flex}.right-column>*{flex:1}}@media(max-width:899px){.app-shell{display:block}.sidebar{display:none}.right-column{display:block}.conversation>header,.composer{padding-left:16px;padding-right:16px}}.geo-source,.geo-progress,.geo-mapping{margin:12px 0}.geo-candidates{display:grid;gap:10px;padding:0;list-style:none}.geo-candidates li{display:grid;gap:5px;padding:12px;border:1px solid #d5ddd3;border-radius:8px}.geo-candidates span,.geo-candidates small{color:#627064}.geo-candidates label,.geo-groups label{display:grid;gap:4px}.geo-candidates button,.geo-mapping button{justify-self:start}.warning{color:#9b2c2c}.mapping-table{display:grid;gap:8px;overflow-x:auto}.mapping-table [role=row]{display:grid;grid-template-columns:minmax(110px,1fr) minmax(160px,1fr) minmax(180px,2fr);gap:8px;padding:8px;border-bottom:1px solid #e4e9e2}.mapping-table select,.geo-groups input,.geo-groups select{min-width:0;padding:7px;border:1px solid #b9c7b8;border-radius:7px;font:inherit}.geo-groups{display:grid;gap:9px;margin:14px 0;border:1px solid #d5ddd3;border-radius:8px}.geo-direction{display:flex;gap:10px;flex-wrap:wrap}.geo-direction label{min-width:150px}.geo-progress progress{width:100%}@media(max-width:899px){.mapping-table [role=row]{grid-template-columns:1fr}.geo-source,.geo-progress,.geo-mapping{margin-left:0;margin-right:0}}
+:root { font-family: Inter, system-ui, sans-serif; color: #17211b; background: #f4f6f2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.app-shell { display: grid; grid-template-columns: 240px minmax(0, 1fr) 360px; min-height: 100vh; }
+.sidebar, .resources { padding: 24px; background: #e9eee8; border-right: 1px solid #d5ddd3; }
+.resources { border-left: 1px solid #d5ddd3; border-right: 0; }
+.sidebar h1 { margin: 0 0 32px; font-size: 1.3rem; }
+.sidebar h2 { margin: 20px 0 8px; color: #627064; font-size: .75rem; text-transform: uppercase; }
+.sidebar form, .settings, .extension-list, .tool-policy { display: grid; gap: 10px; }
+.sidebar form { margin-bottom: 10px; }
+.sidebar form input, .nav-row input, .settings input, .settings select, .settings textarea, .clarification textarea, .tool-policy select { min-width: 0; padding: 8px; border: 1px solid #b9c7b8; border-radius: 7px; font: inherit; }
+.sidebar form button, .nav-row button, .composer button, .card button { border: 0; border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+.sidebar form button, .composer button, .card button { color: #fff; background: #1f6b43; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.nav-row { display: flex; gap: 4px; align-items: center; margin: 3px 0; }
+.nav-row input { width: 84px; }
+.nav-item { display: block; flex: 1; width: 100%; padding: 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
+.nav-item:hover { background: #dce6db; }
+.mobile-sidebar-toggle, .mobile-sidebar-close { display: none; }
+.conversation { display: flex; min-width: 0; flex-direction: column; }
+.conversation > header { display: flex; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid #d5ddd3; background: #fff; }
+.conversation > header button { border: 0; background: transparent; color: #627064; cursor: pointer; }
+.timeline { flex: 1; width: 100%; max-width: 900px; margin: auto; padding: 28px; overflow: auto; }
+.empty { margin-top: 20vh; color: #768378; text-align: center; }
+.message { max-width: 75%; margin: 12px 0; padding: 12px 16px; border-radius: 14px; background: #fff; box-shadow: 0 1px 2px #0000000a; }
+.message.user { margin-left: auto; background: #d9ecd9; }
+.message small, .hint { color: #627064; }
+.message p { margin: 6px 0; white-space: pre-wrap; }
+.safe-markdown a, .resources section a { color: #1f5f9a; }
+.partial { color: #718071; font-size: .8rem; }
+.composer { display: flex; flex-wrap: wrap; gap: 10px; padding: 18px 28px; border-top: 1px solid #d5ddd3; background: #fff; }
+.composer-tools { display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 8px; align-items: end; }
+.composer-tools label, .composer-tools fieldset, .settings label, .clarification label, .tool-policy label { display: grid; gap: 4px; font-size: .85rem; }
+.composer-tools fieldset { border: 1px solid #d5ddd3; border-radius: 7px; }
+.composer-tools input, .composer-tools select { max-width: 180px; padding: 7px; border: 1px solid #b9c7b8; border-radius: 7px; }
+.composer textarea { flex: 1; min-width: 0; min-height: 72px; padding: 12px; border: 1px solid #b9c7b8; border-radius: 10px; resize: vertical; font: inherit; }
+.right-column { background: #eef2ed; }
+.card { margin: 20px; padding: 18px; border: 1px solid #d5ddd3; border-radius: 12px; background: #fff; }
+.button-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.hint { font-size: .78rem; }
+.error, .warning { color: #9b2c2c; }
+.error { margin: 10px 28px; }
+.turn-status { margin: 0; padding: 8px 28px; color: #48604f; background: #eef5ed; }
+.approval, .clarification { margin: 12px 28px; }
+.report-frame iframe { width: 100%; height: 180px; border: 1px solid #d5ddd3; }
+.resources figure { margin: 10px 0; }
+.resources img { max-width: 100%; height: auto; }
+.resources section a { display: block; margin: 6px 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.geo-source, .geo-progress, .geo-mapping { margin: 12px 0; }
+.geo-candidates { display: grid; gap: 10px; padding: 0; list-style: none; }
+.geo-candidates li, .extension-list > li { display: grid; gap: 6px; padding: 12px; border: 1px solid #d5ddd3; border-radius: 8px; }
+.geo-candidates span, .geo-candidates small { color: #627064; }
+.geo-candidates label, .geo-groups label { display: grid; gap: 4px; }
+.geo-candidates button, .geo-mapping button { justify-self: start; }
+.mapping-table { display: grid; gap: 8px; overflow-x: auto; }
+.mapping-table [role=row] { display: grid; grid-template-columns: minmax(110px,1fr) minmax(160px,1fr) minmax(180px,2fr); gap: 8px; padding: 8px; border-bottom: 1px solid #e4e9e2; }
+.mapping-table select, .geo-groups input, .geo-groups select { min-width: 0; padding: 7px; border: 1px solid #b9c7b8; border-radius: 7px; font: inherit; }
+.geo-groups { display: grid; gap: 9px; margin: 14px 0; border: 1px solid #d5ddd3; border-radius: 8px; }
+.geo-direction { display: flex; flex-wrap: wrap; gap: 10px; }
+.geo-direction label { min-width: 150px; }
+.geo-progress progress { width: 100%; }
+.extension-list { padding: 0; list-style: none; }
+.extension-list h3, .extension-list p, .tool-approval p, .tool-approval small { margin: 0; }
+.extension-list pre, .tool-approval pre { max-width: 100%; padding: 8px; overflow: auto; border-radius: 6px; background: #f4f6f2; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-approval { display: grid; gap: 8px; }
+.tool-approval code { overflow-wrap: anywhere; }
+@media (max-width: 1199px) { .app-shell { grid-template-columns: 220px minmax(0,1fr); } .right-column { grid-column: 2; display: flex; border-top: 1px solid #d5ddd3; } .right-column > * { flex: 1; } }
+@media (max-width: 899px) { .app-shell { display: block; } .sidebar { display: none; } .sidebar.mobile-open { position: fixed; z-index: 100; top: 0; bottom: 0; left: 0; display: block; width: min(360px, 90vw); overflow-y: auto; box-shadow: 8px 0 24px #0003; } .mobile-sidebar-toggle, .mobile-sidebar-close { display: inline-block; } .mobile-sidebar-close { float: right; margin: -8px -8px 8px 8px; border: 0; background: transparent; color: #627064; cursor: pointer; } .right-column { display: block; } .conversation > header, .composer { padding-right: 16px; padding-left: 16px; } .mapping-table [role=row] { grid-template-columns: 1fr; } .geo-source, .geo-progress, .geo-mapping, .tool-approval, .skill-settings, .mcp-settings { margin-right: 0; margin-left: 0; } }

@@ -42,8 +42,29 @@ class GeoImportAction(_Action):
     revision: int = Field(ge=1, strict=True)
 
 
+class McpCallAction(_Action):
+    """A namespaced MCP call; arguments remain untrusted JSON data."""
+
+    kind: Literal["mcp_call"]
+    tool_name: str = Field(min_length=1, max_length=512)
+    arguments: dict[str, object] = Field(default_factory=dict)
+
+
+class LoadSkillAction(_Action):
+    """Load one explicitly enabled Skill snapshot into the current turn."""
+
+    kind: Literal["load_skill"]
+    skill_id: UUID
+
+
 AssistantAction = Annotated[
-    AnswerAction | ClarifyAction | PlanAnalysisAction | GeoLookupAction | GeoImportAction,
+    AnswerAction
+    | ClarifyAction
+    | PlanAnalysisAction
+    | GeoLookupAction
+    | GeoImportAction
+    | McpCallAction
+    | LoadSkillAction,
     Field(discriminator="kind"),
 ]
 _ACTION_ADAPTER: TypeAdapter[AssistantAction] = TypeAdapter(AssistantAction)
@@ -51,5 +72,13 @@ _ACTION_ADAPTER: TypeAdapter[AssistantAction] = TypeAdapter(AssistantAction)
 
 def parse_action(
     value: object,
-) -> AnswerAction | ClarifyAction | PlanAnalysisAction | GeoLookupAction | GeoImportAction:
+) -> (
+    AnswerAction
+    | ClarifyAction
+    | PlanAnalysisAction
+    | GeoLookupAction
+    | GeoImportAction
+    | McpCallAction
+    | LoadSkillAction
+):
     return _ACTION_ADAPTER.validate_python(value)

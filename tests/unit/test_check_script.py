@@ -63,7 +63,7 @@ exit $LASTEXITCODE
 def test_all_checks_run_from_project_root_in_dependency_order(tmp_path: Path) -> None:
     result, commands = run_checks(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert len(commands) == 13
+    assert len(commands) == 14
     assert all(Path(command["cwd"]) == ROOT for command in commands)
     arguments = [command["arguments"] for command in commands]
     assert arguments[0] == ["sync", "--frozen", "--dev"]
@@ -76,18 +76,19 @@ def test_all_checks_run_from_project_root_in_dependency_order(tmp_path: Path) ->
     ]
     assert arguments[6] == ["run", "--no-sync", "ruff", "check", "."]
     assert arguments[7] == ["run", "--no-sync", "mypy", "src"]
-    assert {"tests/unit", "tests/integration", "tests/evals"} <= set(arguments[8])
-    assert "not test_real_deseq2_runner_preserves_ad_vs_control_direction" in arguments[8]
-    assert commands[9]["tool"] == "Rscript"
-    assert "renv::restore(prompt = FALSE)" in arguments[9][-1]
+    assert "tests/e2e/test_extensions_workflow.py" in arguments[8]
+    assert {"tests/unit", "tests/integration", "tests/evals"} <= set(arguments[9])
+    assert "not test_real_deseq2_runner_preserves_ad_vs_control_direction" in arguments[9]
     assert commands[10]["tool"] == "Rscript"
-    assert "stopifnot" in arguments[10][-1] and "renv::status" in arguments[10][-1]
-    assert arguments[11] == ["r/tests/testthat.R"]
-    assert "tests/e2e" in arguments[12]
-    assert any("::test_real_deseq2_runner" in argument for argument in arguments[12])
+    assert "renv::restore(prompt = FALSE)" in arguments[10][-1]
+    assert commands[11]["tool"] == "Rscript"
+    assert "stopifnot" in arguments[11][-1] and "renv::status" in arguments[11][-1]
+    assert arguments[12] == ["r/tests/testthat.R"]
+    assert "tests/e2e" in arguments[13]
+    assert any("::test_real_deseq2_runner" in argument for argument in arguments[13])
 
 
-@pytest.mark.parametrize("fail_at", range(1, 14))
+@pytest.mark.parametrize("fail_at", range(1, 15))
 def test_native_failure_stops_all_subsequent_checks(tmp_path: Path, fail_at: int) -> None:
     result, commands = run_checks(tmp_path, fail_at=fail_at)
     assert result.returncode != 0
@@ -95,7 +96,7 @@ def test_native_failure_stops_all_subsequent_checks(tmp_path: Path, fail_at: int
     assert "23" in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize(("suite", "count"), [("Python", 9), ("R", 5)])
+@pytest.mark.parametrize(("suite", "count"), [("Python", 10), ("R", 5)])
 def test_ci_suites_select_only_their_checks(tmp_path: Path, suite: str, count: int) -> None:
     result, commands = run_checks(tmp_path, suite=suite)
     assert result.returncode == 0, result.stderr
@@ -104,7 +105,8 @@ def test_ci_suites_select_only_their_checks(tmp_path: Path, suite: str, count: i
         assert commands[0]["tool"] == "uv"
         assert [command["tool"] for command in commands[1:6]] == ["npm"] * 5
         assert all(command["tool"] == "uv" for command in commands[6:])
-        assert all("tests/e2e" not in command["arguments"] for command in commands[8:])
+        assert "tests/e2e/test_extensions_workflow.py" in commands[8]["arguments"]
+        assert "tests/e2e" not in commands[9]["arguments"]
     else:
         assert [command["tool"] for command in commands] == [
             "uv",

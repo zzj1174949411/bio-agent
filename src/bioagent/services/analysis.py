@@ -27,9 +27,7 @@ class AnalysisService:
         from bioagent.api.routes import _stored_validation
 
         _, summary = _stored_validation(dataset_id, self._dependencies)
-        context = (
-            AgentContext.model_validate(agent_context) if agent_context is not None else None
-        )
+        context = self.build_agent_context(agent_context)
         source = self._source_for_run(dataset_id, context)
         run_id = self._dependencies.artifact_manager.create_run()
         if source is not None:
@@ -54,6 +52,18 @@ class AnalysisService:
             # A run directory without an index is not an analysis record.
             # Keep the directory for diagnostics; no statistical attempt was started.
             raise
+
+    @staticmethod
+    def build_agent_context(
+        agent_context: Mapping[str, object] | None,
+    ) -> AgentContext | None:
+        """Validate the immutable model/Skill snapshot at the analysis boundary."""
+
+        if agent_context is None:
+            return None
+        # AgentContext is extra-forbid, so tool text, prompts, and credentials
+        # cannot accidentally become checkpoint metadata.
+        return AgentContext.model_validate(agent_context)
 
     def read_run(self, run_id: str) -> dict[str, Any]:
         from bioagent.api.routes import _read_run

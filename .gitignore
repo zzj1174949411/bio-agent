@@ -1,5 +1,6 @@
 .worktrees/
 BIO_AGENT_ARCHITECTURE_MEMORY.md
+.bioagent/skills/
 .env*
 !.env.example
 .venv/

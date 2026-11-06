@@ -238,6 +238,8 @@ def test_sse_replay_heartbeat_and_disconnect_leave_turn_running(tmp_path):
         stream = stream_events(store, c.id, after=3, clock=lambda: now[0], pause=tick)
         frames = [await anext(stream) for _ in range(103)]
         assert [int(f.splitlines()[0][4:]) for f in frames] == list(range(4, 107))
+        first_payload = json.loads(frames[0].split("data: ", 1)[1])
+        assert first_payload["turn_id"] == str(turn.id)
         heartbeat = await anext(stream)
         assert heartbeat.startswith(":") and now[0] >= 15
         await stream.aclose()

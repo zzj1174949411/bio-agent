@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     checkpoint_db: Path = Path("checkpoints.sqlite")
     workbench_db: Path = Path("data/workbench.sqlite")
+    skill_root: Path = Path(".bioagent/skills")
     local_allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
     local_dev_origin: str | None = None
     rscript: str = "Rscript"

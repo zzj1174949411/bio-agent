@@ -18,6 +18,7 @@ Bio-Agent 是本地单用户、单 LangGraph 编排器的 bulk RNA-seq 双组分
 | `execution/r_runner.py`、`r/deseq2/` | 参数数组、固定 R 入口、独立工作目录、超时、日志；DESeq2 统计与绘图 |
 | `reporting/` | 从已验证 artifact 构建摘要，使用自动转义模板生成确定性 HTML；可选叙述器受事实句式约束 |
 | `geo/` | NCBI GEO 元数据发现、受限下载、显式样本映射、来源缓存和 source/dataset 绑定 |
+| `extensions/` | 本地 Skill 快照、MCP stdio/Streamable HTTP 适配、工具 schema/policy、一次性批准和不可信结果摘要 |
 | `artifacts/`、`storage/` | 受控路径、manifest 原子写入、独立 SQLite checkpoint 与 API run 索引 |
 
 ```mermaid
@@ -133,6 +134,6 @@ GEO 来源在创建 run 时完成 source/dataset 一致性检查并复制；R �
 
 ## 验证依据与当前限制
 
-`tests/unit/` 验证契约与安全边界；`tests/integration/` 验证 API、checkpoint 和 RRunner；`tests/evals/` 使用固定 Mock 场景验证规划策略；`tests/e2e/` 包含真实 DESeq2 与恢复验收。具体结果及尚未通过的发布验收在 [当前进度](progress/current-state.md)，不从配置文件推断远端 CI 已通过。
+`tests/unit/` 验证契约与安全边界；`tests/integration/` 验证 API、checkpoint、MCP transport 和 RRunner；`tests/evals/` 使用固定 Mock 场景验证规划策略；`tests/e2e/` 包含本地 MCP stdio/HTTP、批准重启恢复、真实 DESeq2 与恢复验收；`frontend/e2e/` 只使用本地 route fixture 验收设置入口。具体结果及尚未通过的发布验收在 [当前进度](progress/current-state.md)，不从配置文件推断远端 CI 已通过。
 
-MVP 不包含账户、团队授权、分布式队列、容器沙盒、多因素分析或多 Agent 运行时。扩展必须继续经过类型契约、人工审批、固定工具、QC 和 provenance 边界。
+MVP 不包含账户、团队授权、分布式队列、容器沙盒、多因素分析或多 Agent 运行时。扩展必须继续经过类型契约、人工审批、固定工具、QC 和 provenance 边界；MCP 结果不改变统计状态，重启/取消也不自动重发可能已有远端副作用的调用。

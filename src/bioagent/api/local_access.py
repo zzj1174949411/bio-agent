@@ -10,7 +10,12 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 def is_workbench_path(path: str) -> bool:
     return any(
         path == prefix or path.startswith(prefix + "/")
-        for prefix in ("/api/v1/model-profiles", "/api/v1/workbench", "/api/v1/geo")
+        for prefix in (
+            "/api/v1/model-profiles",
+            "/api/v1/workbench",
+            "/api/v1/geo",
+            "/api/v1/extensions",
+        )
     )
 
 

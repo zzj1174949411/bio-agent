@@ -1,4 +1,4 @@
-import type { Conversation, GeoImportState, GeoSelection, GeoSourceState, Message, ModelProfile, Project, Turn } from "./types";
+import type { Conversation, GeoImportState, GeoSelection, GeoSourceState, McpServer, Message, ModelProfile, Project, SkillDetail, SkillRecord, ToolDescriptor, ToolPolicy, Turn } from "./types";
 import { parseEventBlock, type WorkbenchEvent } from "./events";
 
 type ErrorBody = { detail?: { code?: string } };
@@ -79,6 +79,22 @@ export class ApiClient {
     return this.request(`/geo/imports/${encodeURIComponent(importId)}/selection`, { method: "POST", body: JSON.stringify(selection) });
   }
   cancelGeoImport(importId: string): Promise<GeoImportState> { return this.request(`/geo/imports/${encodeURIComponent(importId)}/cancel`, { method: "POST", body: "{}" }); }
+  skillRoot(): Promise<{ root: string; configured: boolean }> { return this.request("/extensions/skill-roots"); }
+  setSkillRoot(root: string): Promise<{ root: string; configured: boolean }> { return this.request("/extensions/skill-roots", { method: "PATCH", body: JSON.stringify({ root }) }); }
+  skills(): Promise<{ items: SkillRecord[] }> { return this.request("/extensions/skills"); }
+  rescanSkills(): Promise<{ items: SkillRecord[]; errors: Array<{ relative_path: string; code: string }> }> { return this.request("/extensions/skills/rescan", { method: "POST", body: "{}" }); }
+  skill(skillId: string): Promise<SkillDetail> { return this.request(`/extensions/skills/${encodeURIComponent(skillId)}`); }
+  setSkillEnabled(skillId: string, enabled: boolean, expectedHash?: string): Promise<{ record: SkillRecord }> { return this.request(`/extensions/skills/${encodeURIComponent(skillId)}`, { method: "PATCH", body: JSON.stringify({ enabled, ...(enabled ? { expected_hash: expectedHash } : {}) }) }); }
+  mcpServers(): Promise<{ items: McpServer[] }> { return this.request("/extensions/mcp/servers"); }
+  createMcpServer(payload: Record<string, unknown>): Promise<McpServer> { return this.request("/extensions/mcp/servers", { method: "POST", body: JSON.stringify(payload) }); }
+  updateMcpServer(serverId: string, expectedRevision: number, payload: Record<string, unknown>): Promise<McpServer> { return this.request(`/extensions/mcp/servers/${encodeURIComponent(serverId)}`, { method: "PATCH", body: JSON.stringify({ ...payload, expected_revision: expectedRevision }) }); }
+  setMcpCredential(serverId: string, ref: string, value: string): Promise<{ configured: boolean; ref: string }> { return this.request(`/extensions/mcp/servers/${encodeURIComponent(serverId)}/credential`, { method: "PUT", body: JSON.stringify({ ref, value }) }); }
+  deleteMcpCredential(serverId: string, ref = "default"): Promise<{ configured: boolean; ref: string }> { return this.request(`/extensions/mcp/servers/${encodeURIComponent(serverId)}/credential?ref=${encodeURIComponent(ref)}`, { method: "DELETE" }); }
+  connectMcpServer(serverId: string): Promise<{ server_id: string; protocol_version?: string | null }> { return this.request(`/extensions/mcp/servers/${encodeURIComponent(serverId)}/connect`, { method: "POST", body: "{}" }); }
+  disconnectMcpServer(serverId: string): Promise<{ server_id: string; connected: boolean }> { return this.request(`/extensions/mcp/servers/${encodeURIComponent(serverId)}/disconnect`, { method: "POST", body: "{}" }); }
+  tools(): Promise<{ items: ToolDescriptor[] }> { return this.request("/extensions/tools"); }
+  setToolPolicy(name: string, policy: ToolPolicy, expectedCapabilityRevision: string): Promise<ToolDescriptor> { return this.request(`/extensions/tools/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify({ policy, expected_capability_revision: expectedCapabilityRevision }) }); }
+  decideToolCall(callId: string, approvalId: string, decision: "approve" | "deny", capabilityRevision: string, argumentsHash: string): Promise<Record<string, unknown>> { return this.request(`/extensions/calls/${encodeURIComponent(callId)}/decision`, { method: "POST", body: JSON.stringify({ approval_id: approvalId, decision, capability_revision: capabilityRevision, arguments_hash: argumentsHash }) }); }
 
   async *events(conversationId: string, signal?: AbortSignal): AsyncGenerator<WorkbenchEvent> {
     let after = 0; let delay = 250;

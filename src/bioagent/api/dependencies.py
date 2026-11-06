@@ -24,6 +24,9 @@ from bioagent.domain.runs import RunStatus
 from bioagent.execution.controller import ExecutionController, calculate_plan_hash
 from bioagent.execution.job_runner import JobStatus, LocalJobRunner
 from bioagent.execution.r_runner import RRunner
+from bioagent.extensions.gateway import ToolGateway
+from bioagent.extensions.mcp_client import McpClientAdapter
+from bioagent.extensions.store import SkillStore
 from bioagent.geo.client import GeoClient
 from bioagent.geo.download import GeoDownloader
 from bioagent.geo.repository import GeoRepository
@@ -42,6 +45,7 @@ from bioagent.storage.runs import RunRepository
 from bioagent.tools.registry import ToolRegistry
 from bioagent.workbench.models import TurnStatus
 from bioagent.workbench.store import WorkbenchStore
+from bioagent.workbench.tool_loop import ToolLoop
 from bioagent.workbench.turns import ChatFactory, ConfiguredChatFactory, TurnService
 from bioagent.workflow.graph import build_graph
 
@@ -104,6 +108,10 @@ class DependencyContainer:
     max_columns: int
     parse_timeout_seconds: float
     model_profiles: ModelProfileStore
+    extension_store: SkillStore
+    mcp_client: McpClientAdapter
+    secret_store: SecretStore
+    gateway: ToolGateway
     model_adapter: ModelAdapter
     workbench: WorkbenchStore
     turn_service: TurnService
@@ -166,12 +174,28 @@ def build_dependencies(
     model_profiles = stack.enter_context(
         ModelProfileStore(settings.workbench_db, settings, secrets)
     )
+    extension_store = stack.enter_context(SkillStore(settings.workbench_db))
+    mcp_client = cast(
+        McpClientAdapter,
+        supplied.get("mcp_client")
+        or McpClientAdapter(secret_resolver=_mcp_secret_resolver(secrets)),
+    )
     model_adapter = ModelAdapter(model_profiles)
     workbench = stack.enter_context(WorkbenchStore(settings.workbench_db))
+    gateway = ToolGateway(extension_store, mcp_client, workbench)
     factory = cast(
-        ChatFactory, supplied.get("chat_model_factory") or ConfiguredChatFactory(model_profiles)
+        ChatFactory,
+        supplied.get("chat_model_factory")
+        or ConfiguredChatFactory(
+            model_profiles, gateway=gateway, extension_store=extension_store
+        ),
     )
-    turn_service = TurnService(workbench, factory)
+    turn_service = TurnService(
+        workbench,
+        factory,
+        tool_loop=ToolLoop(gateway, extension_store),
+        gateway=gateway,
+    )
     project_root = Path(__file__).resolve().parents[3]
     errors: list[str] = []
 
@@ -307,6 +331,10 @@ def build_dependencies(
         max_columns=max_columns,
         parse_timeout_seconds=float(timeout_value),
         model_profiles=model_profiles,
+        extension_store=extension_store,
+        mcp_client=mcp_client,
+        secret_store=secrets,
+        gateway=gateway,
         model_adapter=model_adapter,
         workbench=workbench,
         turn_service=turn_service,
@@ -328,6 +356,22 @@ def _positive_int(value: object, label: str) -> int:
     if value <= 0:
         raise ValueError(f"{label} must be positive")
     return value
+
+
+def _mcp_secret_resolver(secrets: SecretStore) -> Callable[[str], str | None]:
+    def resolve(reference: str) -> str | None:
+        try:
+            value = secrets.get(_mcp_secret_reference(reference))
+        except Exception:
+            return None
+        return None if value is None else value.get_secret_value()
+
+    return resolve
+
+
+def _mcp_secret_reference(reference: str) -> str:
+    """Keep MCP credentials in a separate keyring namespace from model keys."""
+    return reference if reference.startswith("mcp:") else f"mcp:{reference}"
 
 
 def _workbench_geo_event_sink(workbench: WorkbenchStore) -> Callable[[dict[str, object]], None]:

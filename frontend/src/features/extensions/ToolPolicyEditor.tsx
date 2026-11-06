@@ -1,0 +1,5 @@
+import type { ToolDescriptor, ToolPolicy } from "../../api/types";
+
+export function ToolPolicyEditor({ tools, onChange }: { tools: ToolDescriptor[]; onChange: (tool: ToolDescriptor, policy: ToolPolicy) => void }) {
+  return <section className="tool-policy"><h3>工具权限</h3><ul className="extension-list">{tools.map((tool) => <li key={tool.qualified_name}><strong>{tool.qualified_name}</strong><p>{tool.description || "未提供工具说明。"}</p><small>数据去向：{tool.server_id}</small><details><summary>输入 schema</summary><pre>{JSON.stringify(tool.input_schema, null, 2)}</pre></details><label>策略<select aria-label={`${tool.qualified_name} 策略`} value={tool.policy} onChange={(event) => onChange(tool, event.target.value as ToolPolicy)}><option value="CONFIRM">CONFIRM（每次确认）</option><option value="ALLOW_READ">ALLOW_READ（绑定当前 capability revision）</option><option value="DENY">DENY</option></select></label>{tool.policy === "ALLOW_READ" && <p className="hint">永久只读授权仅适用于 revision {tool.capability_revision}。</p>}</li>)}</ul></section>;
+}

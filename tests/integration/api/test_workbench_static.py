@@ -57,6 +57,7 @@ def test_static_root_spa_fallback_and_api_404_are_separate(tmp_path: Path) -> No
     )
     assert route.status_code == 200 and "workbench" in route.text
     assert asset.status_code == 200 and "immutable" in asset.headers["cache-control"]
+    assert asset.headers["content-type"].startswith("application/javascript")
     assert unknown.status_code == 404 and unknown.json()["detail"]["code"] == "NOT_FOUND"
 
 

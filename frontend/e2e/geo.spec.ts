@@ -36,6 +36,8 @@ async function mockGeoBackend(page: Page) {
   let selectionSubmitted = false;
   let approved = false;
   let eventPoll = 0;
+  let runReadsAfterApproval = 0;
+  let artifactReadsAfterApproval = 0;
   await page.route("**/api/v1/**", async (route: Route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -60,8 +62,8 @@ async function mockGeoBackend(page: Page) {
     if (path.endsWith("/geo/sources/source-1/imports") && request.method() === "POST") return route.fulfill({ status: 202, json: { id: "import-1", source_id: "source-1", candidate_id: "candidate-1", revision: 1, status: "AWAITING_MAPPING", dataset_id: null, error_code: null, preview, raw_sha256: "a".repeat(64), bytes_downloaded: 512 } });
     if (path.endsWith("/geo/imports/import-1/selection") && request.method() === "POST") { selectionSubmitted = true; return route.fulfill({ status: 202, json: { id: "import-1", source_id: "source-1", candidate_id: "candidate-1", revision: 1, status: "READY", dataset_id: "dataset-1", error_code: null, preview, raw_sha256: "a".repeat(64), bytes_downloaded: 512 } }); }
     if (path.endsWith("/runs/run-1/plan")) return route.fulfill({ json: plan });
-    if (path.endsWith("/runs/run-1") && request.method() === "GET") return route.fulfill({ json: { status: approved ? "COMPLETED" : "AWAITING_APPROVAL", qc_status: approved ? "PASS" : null, report_url: approved ? "/api/v1/runs/run-1/artifacts/report" : null } });
-    if (path.endsWith("/runs/run-1/artifacts") && request.method() === "GET") return route.fulfill({ json: { run_id: "run-1", artifacts: approved ? [{ artifact_id: "artifact-report", sha256: "b".repeat(64) }] : [] } });
+    if (path.endsWith("/runs/run-1") && request.method() === "GET") { if (approved) runReadsAfterApproval += 1; const completed = approved && runReadsAfterApproval > 1; return route.fulfill({ json: { status: completed ? "COMPLETED" : approved ? "RUNNING" : "AWAITING_APPROVAL", qc_status: completed ? "PASS" : null, report_url: completed ? "/api/v1/runs/run-1/artifacts/report" : null } }); }
+    if (path.endsWith("/runs/run-1/artifacts") && request.method() === "GET") { if (approved) artifactReadsAfterApproval += 1; return route.fulfill({ json: { run_id: "run-1", artifacts: approved && artifactReadsAfterApproval > 1 ? [{ artifact_id: "artifact-report", sha256: "b".repeat(64) }] : [] } }); }
     if (path.endsWith("/runs/run-1/approval") && request.method() === "POST") { approved = selectionSubmitted; return route.fulfill({ status: 202, json: { run_id: "run-1", status: "QUEUED" } }); }
     if (path.includes("/model-profiles/") && path.endsWith("/test")) return route.fulfill({ json: { ok: true } });
     return route.fulfill({ json: { items: [] } });

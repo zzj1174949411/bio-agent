@@ -1,20 +1,20 @@
 # Bio-Agent 当前状态
 
-**最后更新：** 2026-09-12
+**最后更新：** 2026-09-14
 
 **当前分支：** `agent/bio-agent-mvp`
 
 **开发 worktree：** `.worktrees/bio-agent-mvp`
 
-**当前阶段：** Task 27 已完成 GEO 来源绑定、真实 DESeq2 双 shrink 模式端到端验收和文档；下一编号任务为 28（Skills/MCP）。Task 15 的旧远端发布与剩余手工演示状态独立保留。
+**当前阶段：** Task 16–33 已全部完成；2026-09-14 又完成一次全项目运行审计，并修复生产静态资源、窄屏项目入口、项目选择、扩展页签、运行完成刷新和 MCP 配置编辑问题。真实模型 API/真实 GEO 公网下载仍按用户要求留待本地配置后联调；Task 15 的旧远端发布状态独立保留。
 
 ## 恢复工作时先做什么
 
 1. 进入 `.worktrees/bio-agent-mvp`。
 2. 阅读根目录 `AGENTS.md`、已批准设计、实施计划和本文件。
 3. 运行 `git status --short --branch` 和 `git log -5 --oneline`。
-4. 阅读下文“下一阶段设计与计划”，再读取 2026-09-08 GEO 设计/计划；保留 Task 15 的历史发布记录。
-5. 只领取当前编号任务，不把后续范围提前混入。自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过。25–27 整体复盘已完成；任务 27 是当前已完成检查点。
+4. 阅读下文“下一阶段设计与计划”；Task 16–33 均已完成，继续修改前先依据用户的新目标补充或更新规格与计划。
+5. 自动模型测试使用 Mock，不读取或调用真实 Key。旧 PR 保持 Draft，本地测试通过不代表远端 CI 已通过；保留 Task 15 的历史发布记录。
 
 ## 已完成
 
@@ -464,9 +464,94 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 - 验证：`uv run --offline pytest tests/e2e/test_geo_workflow.py` 为 **3 passed**；真实 R/回归集合为 **10 passed**（含 `lfc_shrink` 两种路径、API release、恢复重试）；完整 Python 分项为 **540 passed、1 skipped、1 deselected**；R testthat **37 passed**；前端 Vitest **12 files / 24 passed**、typecheck、build、Playwright **2 passed**；Ruff 与 mypy 通过。`scripts/check.ps1` 已执行，但其固定 `runs/check-python` 目录在当前 sandbox 返回 WinError 5，等价分项已用新的可写 basetemp 完成。`renv/activate.R` 哈希保持原有 `A36F28F8…`，未暂存、未提交。
 - 25–27 整体复盘：GEO 下载/转换、对话确认、UI 映射和分析审批仍是分离状态机；来源 hash 与输入 hash 分层记录；旧上传 run 不携带 source 字段仍可读取；未引入 Skills/MCP、多 Agent、公开网络下载或真实模型联调。
 
-## 下一任务
+## Task 28 本地 Skill 发现、校验与快照
 
-任务 28：Skills/MCP 扩展，依赖任务 27。按 [扩展计划](../superpowers/plans/2026-09-08-extensions.md) 领取单个编号任务；不要回改 GEO 验收范围。
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、分支 `agent/bio-agent-mvp` 和 HEAD `ef45c1c`；唯一已有未提交项 `renv/activate.R` 是自动空白改动，全程未恢复、格式化、暂存或提交。
+- TDD 红灯先新增路径逃逸用例；`uv run --offline pytest tests/unit/extensions/test_skills.py -v -p no:cacheprovider` 因 `ModuleNotFoundError: bioagent.extensions` 收集失败，符合新模块尚未创建的预期。
+- 新增配置根 `.bioagent/skills`、一层目录发现、严格 UTF-8/64 KiB 文件与 128 KiB 每轮限制、安全 PyYAML frontmatter、仅本 Skill 内 Markdown/text 引用、深度/循环/符号链接拒绝及确定性组合 hash。Skill 文本和引用均以字面内容冻结，不执行 YAML tag、模板、脚本或凭据插值。
+- 新增独立版本化 Skill SQLite 表，不改变既有 workbench/checkpoint 表。启用绑定 `expected_hash` 与快照；文件或引用改变会撤销新加载，禁用拒绝新加载，历史快照仍可按 hash 读取。`allowed_tools` 只收窄本地授权集合，未声明时也不扩大本地授权。
+- 定向测试为 **11 passed、1 skipped**；相关 `extensions/workbench/models` 回归为 **82 passed、1 skipped**；skip 为本 Windows 主机不具目录符号链接创建权限，Linux CI 会执行该回归。全仓 Ruff、mypy 与 8 项 pre-commit hooks 已通过。`git diff --check` 仅因既有未暂存 `renv/activate.R` 空白改动失败，Task 28 暂存差异将单独检查。未实现 MCP transport、连接或工具调用，未读取真实 Key、访问网络、push、合并或修改旧 PR。
+
+## Task 29 MCP 配置与两种 transport
+
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、`agent/bio-agent-mvp` 分支与 Task28 提交 `59c9f1f`；保留用户已有的 `renv/activate.R` 自动空白改动，未恢复、格式化、暂存或提交。
+- TDD 红灯先新增端点与适配器测试；在实现前运行单元测试于收集阶段得到 `ModuleNotFoundError: No module named 'bioagent.extensions.mcp_client'`，符合新客户端模块尚不存在的预期。
+- 按官方 PyPI/GitHub 客户端文档核对并锁定 MCP Python SDK **2.2.0**（`mcp==2.2.0`，含 Streamable HTTP 与 stdio 公共客户端 API）到 `pyproject.toml`/`uv.lock`；SDK 类型仅封装在 `extensions/mcp_client.py`，对外保持 `connect`、`list_tools`、`call_tool`、`disconnect`、`close`。
+- 新增冻结的 `StdioConfig`、`HttpConfig`、`McpServerConfig`、`McpConnection`、`McpTool`、`McpCallResult`，并在 SkillStore 同一 workbench DB 建立独立版本化 MCP 配置表；配置只保存 secret refs，不保存 secret 值。依赖容器注入 `SkillStore` 与 `McpClientAdapter`，解析模型 SecretStore 仅用于显式 MCP refs。
+- stdio 使用 `shell=False`、绝对 executable/cwd、最小继承环境和显式 refs，父进程组退出清理本应用子进程树；连接/发现 10 秒、调用默认 60 秒/最高 300 秒并受 turn 剩余时间约束，最多 8 连接。HTTP 仅允许本地明文或远端 HTTPS，拒绝 userinfo/fragment/凭据 query，禁用重定向并通过 `trust_env=False` 与流式 2 MiB 响应限额隔离请求。
+- 本地 MCP fixture 覆盖 echo、delay、isError、大结果、退出和派生子进程模式；真实 SDK stdio/Streamable HTTP round-trip、协议协商、超时/取消、2 MiB 消息/响应限额、模型 Key 不继承及子进程清理均有测试。有效结果：定向 MCP **24 passed**；`tests/unit/extensions tests/integration/test_mcp_transports.py` **35 passed、1 skipped**（Windows 目录 symlink 权限）。既有 `tests/unit/extensions tests/unit/workbench tests/unit/models tests/integration/api` 回归 **173 passed、1 skipped**。
+- 静态检查：`mypy src`（69 个源文件）、全仓 Ruff 与 8 项 pre-commit hooks 均通过。全量 Python 回归为 **583 passed、2 skipped、2 failed**；失败仅为既有真实 R e2e 在当前 Windows 主机的 `ValueError/EXECUTION_FAILED`（`Rscript` 不在 PATH，且未修改相关执行代码），MCP 定向与扩展相关回归均通过。测试未访问公网 MCP/模型服务、未读取真实模型 Key、未执行任意用户命令；未实现 Task30 policy/schema/API、未 push、合并或修改旧 Draft PR。`git diff --check` 仅报告既有 `renv/activate.R`，本任务暂存差异单独检查。
+
+## Task 30 工具 policy、schema 与一次性批准
+
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、分支 `agent/bio-agent-mvp` 和 Task29 提交 `7f5bfe1`；保留用户已有 `renv/activate.R` 空白修改，未恢复、格式化、暂存或提交。
+- TDD 红灯先写只读 annotation policy 测试；按计划运行时集成测试文件尚不存在，随后单测收集得到 `ModuleNotFoundError: No module named 'bioagent.extensions.policy'`，符合策略模块尚不存在的预期红灯。
+- 新增 `policy.py`、`gateway.py` 和 `extension_routes.py`。工具初始始终 `CONFIRM`；本地 JSON Schema 规范化/远程 `$ref` 拒绝、schema/capability revision、DENY/CONFIRM/ALLOW_READ、输出校验、2 MiB 限制和稳定错误码均在 gateway 统一执行。MCP 工具使用 `mcp.<server_id>.<tool>` 命名空间，`analysis.approve` 不进入目录。
+- Skill 根目录、扫描/预览/启停、MCP server 配置版本控制、独立凭据引用、显式连接/断开、工具 policy、批准决定 API 均挂载 `/api/v1/extensions`，沿用 Host/Origin/CSRF 边界；根变更会禁用 Skill。批准表保存随机 ID、turn/call、参数 hash、capability revision、10 分钟过期和 `used_at`，SQLite 原子消费及 turn 撤销已实现。事件只写工具/hash/版本等脱敏字段，不写 secret 或原始参数。
+- 定向测试：`uv run --offline pytest tests/unit/extensions/test_tool_policy.py tests/integration/api/test_extensions.py -q -p no:cacheprovider` 为 **16 passed**；相关回归 `tests/unit/extensions tests/unit/workbench tests/unit/models tests/integration/api` 为 **189 passed、1 skipped**（Windows 目录 symlink 权限）。此前一次超大结果断言误捕获已修正并复跑通过。
+- 静态检查：全仓 `ruff check .`、`mypy src`、8 项 pre-commit hooks 均通过；pre-commit 首次因缓存目录权限/网络受限，改用工作区缓存并在获准的外部环境完成。未重跑 Task29 已知的两项真实 R e2e；当前主机仍因 `Rscript` 不在 PATH 而失败，保留该限制。未访问公网 MCP/模型服务、未读取真实 Key、未执行任意用户命令。
+- 28–30 整体复盘：Skill 内容仍是本地只读快照，MCP transport 只负责协议适配；gateway 将用户 policy、schema、批准和预算边界集中执行，统计分析审批仍由原 AnalysisPlan 控制。配置/schema/revision 变化不会复用旧批准；凭据只经独立 SecretStore 引用注入，审计与结果不改变 run 状态。范围未扩展到 Task31 对话工具循环、多 Agent 或自动安装。
+
+## Task 31 对话 Skill 选择与受控 MCP 工具循环
+
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、`agent/bio-agent-mvp` 分支和 Task30 提交 `436ac6b`；保留用户已有的 `renv/activate.R` 空白改动，未恢复、格式化、暂存或提交。
+- TDD 红灯先新增 `test_tool_loop.py` 与 `test_workbench_tools.py`；实现前运行定向测试在收集阶段得到 `ModuleNotFoundError: No module named 'bioagent.workbench.tool_loop'`，符合循环模块尚不存在的预期红灯。
+- 新增 `ToolLoop` 与单调截止时间 `TurnBudget`：每轮最多 8 个 MCP/Skill 动作、120 秒活动时长，动作在调用前预留额度，失败/未知结果不重试；等待批准暂停预算，继续同一 turn 时沿用已落盘计数。工具结果以来源标签和 16 KiB UTF-8 上限摘要进入下一模型轮次，始终作为不可信数据。
+- 新增 `mcp_call`、`load_skill` 动作。模型只收到当前非 DENY 工具和启用 Skill 的元数据；Skill 只从当前能力快照加载，最多三项，不做环境变量展开，授权/哈希变化会拒绝加载。MCP 调用继续统一经 ToolGateway，批准请求保存脱敏 call/参数 hash/capability revision；批准响应复用同一 turn，重复响应冲突，取消/重启撤销未使用批准。
+- 保留 GEO 内置动作与原 `AnalysisService`/DESeq2 审批边界；计划动作的 `agent_context` 绑定 turn 的 model snapshot 及已加载 Skill 名称/hash。新增可查询的当前可用工具 API，不改变完整工具目录供设置页审阅。
+- 定向验证 `tests/unit/workbench/test_tool_loop.py` + `tests/integration/api/test_workbench_tools.py` 为 **8 passed**；相关 `tests/unit/extensions tests/unit/workbench tests/integration/api` 为 **167 passed、1 skipped**，跳过项为 Windows 目录 symlink 权限。Ruff、`mypy src` 与 pre-commit hooks 全部通过。
+- 未读取真实模型 Key、未调用公网 MCP/模型服务、未执行真实 R 分析；Task29 已知 Rscript PATH 限制未重跑。`git diff --check` 仍只报告既有 `renv/activate.R` 空白变更，本任务暂存差异将单独检查。未 push、合并或修改 Draft PR。
+
+## Task 32 扩展设置和调用确认卡
+
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、`agent/bio-agent-mvp` 分支与 Task31 提交 `7f93bb6`；保留用户已有 `renv/activate.R` 空白改动，未恢复、格式化、暂存或提交。
+- TDD 红灯先只新增三个计划指定的组件测试；首次 `npm --prefix frontend run test -- --run` 有 3 个失败套件，均因 `SkillSettings`、`McpSettings`、`ToolApprovalCard` 尚不存在而无法解析导入，既有 12 个套件/24 项测试通过。
+- Skills 设置页支持根目录、扫描、内容/引用安全预览、组合 hash、启停、扫描错误与文件变化后重新启用提示。MCP 设置页支持保存后的 stdio/HTTP 表单、仅凭据引用、精确命令/endpoint 预览、连接/断开、协议版本和工具目录；密码字段写入后清空，模型 Key 不复用为 MCP 凭据。
+- Tool policy 页展示 schema、服务数据去向与 capability revision，默认 `CONFIRM`；调用卡仅由显式批准/拒绝触发，安全展示目标、规范化参数、hash/revision/过期状态，旧 revision、过期或重复点击均不可用。原始工具结果使用折叠文本节点显示，不注入 HTML；等待时仅更新当前 revision 状态，不改写已经展示的目标或参数快照。
+- 验证：前端全量 Vitest **15 files / 27 passed**，`npm --prefix frontend run typecheck`、`npm --prefix frontend run build` 均通过。最小后端/API 静态检查 `uv run --offline --no-sync pytest tests/integration/api/test_extensions.py -q -p no:cacheprovider --basetemp .pytest-task32-api` 为 **3 passed**，`uv run --offline --no-sync ruff check .` 通过。未执行 R、全量 Python 或 Task33 e2e；未读取真实 Key、调用公网 MCP/模型服务、push 或合并。
+
+## Task 33 扩展端到端、恢复和使用文档
+
+- 会话开始确认既有 `.worktrees/bio-agent-mvp`、`agent/bio-agent-mvp` 分支与 Task32 提交 `b3a5b53`；保留用户已有 `renv/activate.R` 空白改动，未恢复、格式化、暂存或提交。
+- TDD 红灯先新增计划指定的两个 e2e 文件。Python 首次运行在工作区 uv 缓存替代后收集为 3 项，其中 stdio/HTTP 2 项通过，跨重启未知结果断言因缺少 `action.failed` 审计而失败；Playwright 首次在等待不存在的“设置”入口超时。两项失败均对应真实缺口，未改写断言绕过。
+- 修复 ToolGateway：工具连接断开、取消、未知结果、过大结果、MCP isError 和输出 schema 错误均写入脱敏 `action.failed` 事件；未知结果保持 `TOOL_OUTCOME_UNKNOWN`，不自动重试。新增 e2e 参数化验证任务 29 的真实 MCP SDK fixture stdio/HTTP；重启重新打开扩展数据库后撤销旧批准，call count 保持一次。
+- 设置页演示入口统一为“设置”，提供 Skills/MCP 页签和“添加 MCP 服务”；无模型 Key 时仍可加载工作台。新增合成 [bulk-rnaseq-review Skill](../../examples/skills/bulk-rnaseq-review/SKILL.md) 与 [只读 MCP fixture](../../examples/mcp/readonly_server.py)，以及 [扩展配置指南](../extensions.md)，记录绝对 executable/argv/cwd、env/header refs、HTTP endpoint、连接/权限/禁用/清理、SDK 版本、限额和取消不能回滚远端的语义。
+- CI/统一门禁将本地扩展 Python e2e 纳入 Python suite，Node 22.12、`mcp==2.2.0` 与 lockfile 继续固定；浏览器只走本地 route fixture，不执行自动批准或真实账户工具。README、工作台、架构和安全说明均补充 Skills/MCP 与统计证据边界。
+- 验证：定向 Python `tests/e2e/test_extensions_workflow.py` **3 passed**；扩展 Playwright **1 passed**，完整前端 Playwright **3 passed**；Vitest **15 files / 27 passed**，typecheck/build 通过；统一 `scripts/check.ps1` **600 passed、2 skipped、1 deselected**，R testthat **37 passed**，R/DESeq2 e2e **13 passed**；pre-commit **8 hooks passed**。skip 为 Windows 目录 symlink 权限；pytest 有 Windows 缓存目录 WinError 5 警告。首次 sandbox 运行因 `.venv` 权限拒绝，获准外部环境重跑后门禁通过；未访问公网、真实 GEO/MCP/模型 Key，未 push、合并或改 PR。
+
+## Task 33 完成后的全项目运行审计
+
+- 先执行未修改代码的完整 `scripts/check.ps1`，结果为前端 Vitest **15 files / 27 passed**、Playwright **3 passed**、Python **600 passed、2 skipped、1 deselected**、R testthat **37 passed**、真实 R/DESeq2/e2e **13 passed**，Ruff、mypy、typecheck 和 build 全通过。skip 仍是 Windows 目录 symlink 权限。
+- 真实启动 `scripts/start-workbench.ps1 -Port 8010` 后发现 Windows MIME 注册表让 Vite 的 ES module 以 `text/plain` 返回，浏览器因此显示空白页；新增静态集成断言后，服务端对 `.js`/`.mjs` 强制使用 `application/javascript`。生产构建已在实际浏览器确认渲染，根页面和哈希 JS 均为 200，浏览器控制台无 warn/error。
+- 修复窄屏隐藏项目栏却没有入口的问题；顶部“项目与对话”现在打开可关闭抽屉。项目选择成为显式状态，新对话使用当前项目，切换项目会清理旧对话上下文。既有组件测试和窄屏 Playwright 用例覆盖该行为。
+- Skills/MCP 改为真正互斥的页签；分析审批后会随 turn 状态变化重新读取 run 与 artifacts，因此 RUNNING 转为 COMPLETED 后能显示 QC 和下载。GEO 浏览器流程先复现这两个状态缺口，再验证修复。
+- 已保存 MCP 服务现在会把当前配置与 revision 载入表单并调用 update API；stdio argv 改为每行一个完整参数，包含空格的 Windows 路径不会被空白拆分。现有 MCP 组件测试覆盖载入、更新和 argv 保真。
+- 修复后重新执行完整 `scripts/check.ps1`：前端 Vitest **15 files / 28 passed**、Playwright **3 passed**、Python **600 passed、2 skipped、1 deselected**、扩展 e2e **3 passed**、R testthat **37 passed**、真实 R/DESeq2/e2e **13 passed**，Ruff、mypy、typecheck、production build 与 renv 同步检查均通过；限定于本次暂存文件的 pre-commit **8 hooks passed**。pytest 仅有当前工作区缓存 ACL 警告，skip 仍是 Windows 目录 symlink 权限。
+- 保留用户已有的 `renv/activate.R` 空白修改，未恢复、格式化、暂存或提交。未访问真实模型/GEO/MCP 账户，未读取 Key，未 push、合并或修改旧 PR。
+
+## Task 33 API 鉴权无响应修复
+
+- 用户真实工作台中两次消息只有 user card、没有回复。只读查询本地 turn 记录确认两次均在约 0.15 秒内进入 `FAILED`，错误码都是 `MODEL_AUTH_FAILED`；随后调用内置 profile probe，同样得到 `ok=false / MODEL_AUTH_FAILED`。未读取或输出 API Key。
+- 根因包含两个界面缺口：`Environment / deepseek` 是只在进程启动时读取 `BIOAGENT_DEEPSEEK_API_KEY` 的只读 profile，但旧界面仍允许填写 Key 和点击更新；同时 probe 忽略响应中的 `ok=false`，快速失败事件与提交响应存在竞态，页面既不显示错误又可能保留旧 QUEUED 状态。
+- 环境 profile 现在禁用编辑并明确提示修改 `.env` 后重启，或选择“新模型”保存可编辑配置；切回新模型会清空旧环境字段。probe 根据真实 `ok/code` 显示结果。SSE 投影携带 `turn_id`，客户端按事件 seq 应用终态并显示稳定失败码，快速失败不会被稍后返回的 QUEUED 响应覆盖。
+- DeepSeek 当前官方资料确认 `https://api.deepseek.com` 与 `deepseek-v4-flash` 仍是有效组合；当前失败是凭据鉴权，不是截图中的模型名或 Base URL。自动测试继续使用 Mock，未把真实 Key 写入日志、数据库、文档或 Git。
+- 修复后完整 `scripts/check.ps1` 通过：前端 Vitest **15 files / 29 passed**、Playwright **3 passed**、Python **600 passed、2 skipped、1 deselected**、扩展 e2e **3 passed**、R testthat **37 passed**、真实 R/DESeq2/e2e **13 passed**，Ruff、mypy、typecheck、production build 与 renv 同步检查均通过；限定于本次暂存文件的 pre-commit **8 hooks passed**。skip 和 pytest cache 警告仍只来自 Windows 权限。
+
+## Task 33 实时消息与流式进度修复
+
+- 用户截图显示自己刚发送的消息标成 “Bio-Agent”。数据库/API 中角色实际正确，问题是前端 SSE reducer 创建实时 message 时把角色硬编码为 assistant；现已使用服务端事件中的受限 `user/assistant` 角色，刷新前后显示一致。
+- provider 原本已使用 `astream`，但 Task31 工具循环先把所有文本分片收集进 `ToolLoopResult`，TurnService 在模型结束后才一次性落库。工具循环新增受控 `on_text` 回调，普通文本分片直接通过既有 `append_delta` 事务与 SSE 推送；取消或终态导致写入停止时不再继续完成 turn，默认无回调路径保持既有测试兼容。
+- 工作台在 QUEUED/RUNNING 时显示“等待 Agent 处理/正在思考并检查可用工具”的可审计状态。模型私有 reasoning 继续不保存、不展示；用户可看到文本生成、工具确认和分析审批过程，而不是内部思维链。
+- 当前没有关键词搜索能力是既有 Task22–27 的明确边界：内置 `geo_lookup` 只接受已知 GSE。若扩展，需要新增受限 GEO/Entrez 搜索工具或显式配置搜索 MCP，并为查询、候选与来源证据建立契约，不能让模型猜编号。
+- 修复后完整 `scripts/check.ps1` 通过：前端 Vitest **15 files / 29 passed**、Playwright **3 passed**、Python **601 passed、2 skipped、1 deselected**、扩展 e2e **3 passed**、R testthat **37 passed**、真实 R/DESeq2/e2e **13 passed**，Ruff、mypy、typecheck、production build 与 renv 同步检查均通过。skip 与 pytest cache 警告仍只来自 Windows 权限。
+
+## 31–33 整体复盘
+
+- 单 Agent 边界保持：Task31 只允许受约束 action loop，Task32 只做设置/策略/批准 UI，Task33 只补本地 fixture、恢复审计和文档；没有多 Agent 编排或新统计方法。
+- 无任意执行与自动下载：Skill 仅本地文本快照；MCP 只能运行用户已保存的绝对 executable/argv 或完整 endpoint，不接受聊天生成命令，不使用 `npx -y` 或市场安装。
+- 无凭据进入证据：模型 Key 与 MCP 独立 refs 只在连接请求边界使用；secret 不进入 SQLite、事件、checkpoint、manifest、日志或模型上下文；MCP 返回带不可信标签且不是统计证据。
+- 统计审批未绕过：MCP policy/批准不改变 AnalysisPlan 的 revision/hash、R attempt、QC 或报告；DESeq2 仍需原人工分析审批。取消、重启和已发出未知结果均不自动重发远端调用。
+- 已验证客户端/transport：Node `v24.15.0`（CI 固定 `22.12.0`）、npm `11.12.1`、uv `0.12.5`、R `4.5.2`、MCP SDK `2.2.0`；本地真实 SDK fixture 覆盖 stdio 与 Streamable HTTP，浏览器仅使用合成 route fixture。未做真实账户手工联调，真实模型 API 由用户后续明确配置。
 
 真实模型 API 仍可由用户后续接入，不等待 Key。Task 15 发布收尾单独保留：推送需前述明确授权，之后核验最新 CI；具体 UI 演示审批获准后补录结果/GIF及手工下载核验。保持 Draft，不直接合并。
 
@@ -478,7 +563,7 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 | --- | --- | --- | --- |
 | A 工作台与模型 | [设计](../superpowers/specs/2026-09-08-workbench-design.md) | [16–21](../superpowers/plans/2026-09-08-workbench.md) | 16–21 已实现 |
 | B GEO 数据接入 | [设计](../superpowers/specs/2026-09-08-geo-design.md) | [22–27](../superpowers/plans/2026-09-08-geo.md) | 22–27 已实现 |
-| C Skills/MCP | [设计](../superpowers/specs/2026-09-08-extensions-design.md) | [28–33](../superpowers/plans/2026-09-08-extensions.md) | 文档已编写，依赖 27 |
+| C Skills/MCP | [设计](../superpowers/specs/2026-09-08-extensions-design.md) | [28–33](../superpowers/plans/2026-09-08-extensions.md) | 28–33 已实现，真实 API/账户联调由用户后接 |
 
 设计采用 React/TypeScript + FastAPI 同源工作台、REST/SSE 事件、独立对话存储和 turn 队列；API Key 使用系统凭据存储/环境引用，切换模型只影响新轮次。GEO 下载、样本确认、source/dataset 绑定和 run provenance 已通过 Task27；Skill/MCP 不具有替代分析审批的权限。
 
@@ -489,12 +574,12 @@ Task 13 的路由/统计/恢复测试和 Task 14 的统一门禁提供了基线�
 ## 新会话启动提示词
 
 ```text
-继续 Bio-Agent 的任务 28。进入既有 .worktrees/bio-agent-mvp，确认
+扩展计划任务 28–33 已完成。进入既有 .worktrees/bio-agent-mvp，确认
 agent/bio-agent-mvp 分支，按 AGENTS.md 读取设计/计划/进度及 Git 状态。
 随后读取 2026-09-08-extensions-design.md 和 2026-09-08-extensions.md。
-任务 27 已完成 GEO 来源绑定、真实统计端到端与文档；
-本次只实现任务 28 的 Skills/MCP 扩展，先失败测试，再实现和验收，不提前实现任务 29。
-自动模型测试用 Mock，不读取真实 Key；不得提前实现 Skills 或 MCP。
-保持明确人工审批和原统计执行边界；不要提前实现任务 29。
-完成后更新计划/进度并提交，保留旧 PR Draft，不推送、不合并、不新建 worktree。
+任务 28–33 已完成本地 Skill、MCP stdio/Streamable HTTP 客户端、工具 policy/schema/一次性批准、
+对话工具循环、扩展设置与调用确认卡、端到端恢复和使用文档；真实模型 API/账户联调由用户后续明确配置。
+自动模型测试用 Mock，不读取真实 Key；不得提前扩大到计划外的功能范围。
+保持明确人工审批和原统计执行边界；不要回改已完成的任务 28–33。
+如需继续，先获得用户明确授权再做真实 API/账户联调；保留旧 PR Draft，不推送、不合并、不新建 worktree。
 ```

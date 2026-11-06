@@ -29,6 +29,10 @@ try {
         Invoke-Check uv @("run", "--no-sync", "ruff", "check", ".")
         Invoke-Check uv @("run", "--no-sync", "mypy", "src")
         Invoke-Check uv @(
+            "run", "--no-sync", "pytest", "tests/e2e/test_extensions_workflow.py", "-v",
+            "--basetemp=runs/check-python-extensions"
+        )
+        Invoke-Check uv @(
             "run", "--no-sync", "pytest", "tests/unit", "tests/integration", "tests/evals",
             "-k", "not test_real_deseq2_runner_preserves_ad_vs_control_direction", "-q",
             "--basetemp=runs/check-python"

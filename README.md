@@ -15,6 +15,7 @@
 - 分离 SQLite 工作流 checkpoint、API 运行索引与科研 manifest；下载时复核产物 SHA-256。
 - 提供本地 React 工作台：项目/对话、SSE 消息、人工审批、模型 profile、QC/报告和逐个 artifact 下载。
 - 支持从单个 GSE 编号发现 GEO 候选、确认 raw counts、映射样本并把来源副本绑定到分析 manifest。
+- 支持本地 Skills 说明、MCP stdio/Streamable HTTP 工具目录、权限策略和一次性人工调用批准；扩展返回不是统计证据。
 - Streamlit 经 HTTP API 展示五个页面，运行历史来自项目存储。
 
 ## 架构
@@ -42,6 +43,8 @@ flowchart TD
 
 GEO 接入从候选发现到样本映射都需要用户确认；候选分类、资源上限、来源缓存和 provenance 下载规则见 [GEO 数据接入说明](docs/geo.md)。
 
+Skills 与 MCP 仅作为已有单 Agent 工作台的受控扩展，配置、权限、重启恢复和本地只读 fixture 见 [扩展指南](docs/extensions.md)。
+
 ## 科学边界
 
 MVP 只接受已计数的 bulk RNA-seq 数据，选定分组列必须恰好有两个水平，每组至少 2 个样本；只有 2 个样本时给出警告。输入应为有限、非负整数 counts，不能用 TPM、FPKM 或已归一化表达量代替。结果的 log2 fold change 始终表示 numerator 相对 denominator。
@@ -68,7 +71,7 @@ $env:R_LIBS = (Rscript -e 'cat(renv::paths$library())' | Select-Object -Last 1).
 uv run uvicorn bioagent.api.app:create_app --factory --reload --host 127.0.0.1
 ```
 
-启动 API 前，在本地 `.env` 配置模型；没有 Key 时使用 [Mock 演示工厂](docs/demo.md)。已有 `.env` 时保留自己的配置，不重复复制。另开一个终端，在同一仓库运行：
+启动 API 前，在本地 `.env` 配置模型；没有 Key 时使用 [Mock 演示工厂](docs/demo.md)。扩展设置和本地只读 MCP fixture 不要求模型 Key。已有 `.env` 时保留自己的配置，不重复复制。另开一个终端，在同一仓库运行：
 
 ```powershell
 uv run streamlit run ui/streamlit_app.py --server.address 127.0.0.1
