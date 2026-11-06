@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bio-Agent differential expression report</title>
+</head>
+<body>
+  <main>
+    <h1>Bulk RNA-seq differential expression report</h1>
+
+    <section id="overview">
+      <h2>Analysis overview</h2>
+      <p><strong>Method:</strong> {{ method_label }}</p>
+      <p><strong>Comparison:</strong> {{ manifest.comparison.numerator }} relative to {{ manifest.comparison.denominator }}</p>
+      <p><strong>Factor:</strong> {{ manifest.comparison.factor }}</p>
+      <p><strong>Samples:</strong> {{ summary.sample_count }}</p>
+      <p><strong>Features tested:</strong> {{ summary.feature_count }}</p>
+      <p><strong>Adjusted p-value threshold:</strong> {{ manifest.alpha }}</p>
+      <p><strong>LFC shrinkage:</strong> {{ "enabled" if manifest.lfc_shrink else "disabled" }}</p>
+      {% if manifest.lfc_shrink %}
+      <p>In result tables, log2FoldChange is the apeglm posterior mode and lfcSE is its posterior SD. The stat, pvalue and padj columns retain the original Wald test results; stat is not the ratio of the shrunken log2FoldChange to lfcSE.</p>
+      {% endif %}
+      <p><strong>Significant genes:</strong> {{ summary.significant_gene_count }}</p>
+    </section>
+
+    <section id="quality-control">
+      <h2>Quality control</h2>
+      <p><strong>QC: {{ qc.status.value }}</strong></p>
+      {% if qc.issues %}
+      <ul>
+        {% for issue in qc.issues %}
+        <li><strong>{{ issue.code }} ({{ issue.status.value }}):</strong> {{ issue.message }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>No QC issues were recorded.</p>
+      {% endif %}
+    </section>
+
+    <section id="narrative">
+      <h2>Constrained narrative</h2>
+      {% if narrative and narrative.text %}
+      <p>{{ narrative.text }}</p>
+      {% else %}
+      <p>LLM narrative unavailable. This deterministic report remains complete.</p>
+      {% if narrative and narrative.warning %}
+      <p><strong>{{ narrative.warning.code }} (WARN):</strong> {{ narrative.warning.message }}</p>
+      {% endif %}
+      {% endif %}
+    </section>
+
+    <section id="top-results">
+      <h2>Top validated results</h2>
+      {% if summary.top_results %}
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Base mean</th>
+            <th>log2 fold change</th>
+            <th>p-value</th>
+            <th>Adjusted p-value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in summary.top_results %}
+          <tr>
+            <td>{{ row.feature_id }}</td>
+            <td>{{ row.base_mean }}</td>
+            <td>{{ row.log2_fold_change }}</td>
+            <td>{{ row.p_value if row.p_value is not none else "NA" }}</td>
+            <td>{{ row.adjusted_p_value if row.adjusted_p_value is not none else "NA" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p>No result rows were supplied for display.</p>
+      {% endif %}
+    </section>
+
+    <section id="software">
+      <h2>Software versions</h2>
+      <ul>
+        {% for name, version in software_versions %}
+        <li>{{ name }}: {{ version }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section id="artifacts">
+      <h2>Figures and downloads</h2>
+      <ul>
+        {% for artifact in artifacts %}
+        <li><a href="{{ artifact.href }}">{{ artifact.label }}</a> ({{ artifact.relative_path }})</li>
+        {% endfor %}
+      </ul>
+      {% for artifact in artifacts if artifact.is_image %}
+      <figure>
+        <img src="{{ artifact.href }}" alt="{{ artifact.label }}">
+        <figcaption>{{ artifact.label }}</figcaption>
+      </figure>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

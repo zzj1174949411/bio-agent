@@ -1,0 +1,83 @@
+name: deseq2
+schema_version: "1.0"
+plan_schema_versions: ["1.0"]
+description: "Bulk RNA-seq two-group differential expression with DESeq2"
+entrypoint: r/deseq2/run.R
+timeout_seconds: 1800
+resource_limits:
+  timeout_seconds: 1800
+  memory_mb: 4096
+runtime:
+  language: R
+  r_version: "4.5.2"
+  renv_lock: renv.lock
+  required_packages:
+    - DESeq2
+    - apeglm
+    - jsonlite
+    - pheatmap
+inputs:
+  - name: counts
+    type: csv
+    required: true
+    description: "Integer gene-by-sample count matrix with feature_id column"
+  - name: metadata
+    type: csv
+    required: true
+    description: "Sample metadata with sample_id and the selected factor"
+parameters:
+  counts_path:
+    type: string
+    required: true
+  metadata_path:
+    type: string
+    required: true
+  output_dir:
+    type: string
+    required: true
+  factor:
+    type: string
+    required: true
+  numerator:
+    type: string
+    required: true
+  denominator:
+    type: string
+    required: true
+  alpha:
+    type: number
+    required: false
+    default: 0.05
+  lfc_shrink:
+    type: boolean
+    required: false
+    default: true
+required_artifacts:
+  - results/all_results.csv
+  - results/significant_results.csv
+  - results/normalized_counts.csv
+  - results/pca.csv
+  - results/size_factors.csv
+  - results/execution_summary.json
+  - results/session_info.txt
+  - figures/pca.png
+  - figures/pca.pdf
+  - figures/sample_correlation_heatmap.png
+  - figures/sample_correlation_heatmap.pdf
+  - figures/ma_plot.png
+  - figures/ma_plot.pdf
+  - figures/volcano_plot.png
+  - figures/volcano_plot.pdf
+preconditions:
+  - "counts and metadata sample_id sets match exactly"
+  - "counts are finite, non-negative integers with non-zero libraries"
+  - "factor has exactly two non-missing levels"
+  - "numerator and denominator are distinct observed factor levels"
+postconditions:
+  - "all required artifacts exist below the output directory"
+  - "result table contains feature_id, log2FoldChange, pvalue, and padj"
+  - "execution_summary.json reports status success"
+safety:
+  allow_arbitrary_code: false
+  allow_arbitrary_scripts: false
+  allow_arbitrary_path_expressions: false

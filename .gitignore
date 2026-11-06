@@ -1,0 +1,17 @@
+.worktrees/
+BIO_AGENT_ARCHITECTURE_MEMORY.md
+.env*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+*.py[cod]
+runs/
+data/
+checkpoints.sqlite*
+.Rproj.user/
+renv/library/
+docs/assets/raw/

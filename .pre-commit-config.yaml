@@ -1,0 +1,17 @@
+minimum_pre_commit_version: '4.3.0'
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Match the Ruff version in uv.lock; lint without automatic fixes.
+    rev: v0.16.3
+    hooks:
+      - id: ruff-check
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+      - id: detect-private-key

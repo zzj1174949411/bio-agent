@@ -1,0 +1,10 @@
+{
+  "counts_path": "tests/fixtures/counts_deseq2.csv",
+  "metadata_path": "tests/fixtures/metadata_deseq2.csv",
+  "output_dir": "runs/deseq2_smoke",
+  "factor": "condition",
+  "numerator": "AD",
+  "denominator": "Control",
+  "alpha": 0.05,
+  "lfc_shrink": false
+}
