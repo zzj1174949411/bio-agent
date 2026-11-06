@@ -42,20 +42,28 @@ try {
     }
     # RRunner uses a separate attempt directory, outside the project's .Rprofile.
     # Resolve the restored project library in every fresh terminal, before serving.
-    $rCheck = @'
-project_library <- renv::paths$library()
-stopifnot(dir.exists(project_library))
-.libPaths(c(project_library, .libPaths()))
-library(DESeq2, lib.loc = project_library)
-library(apeglm, lib.loc = project_library)
-cat(normalizePath(project_library, mustWork = TRUE))
-'@
+    # Windows PowerShell can truncate a native argument at the first CRLF.
+    $rCheck = @(
+        'project_library <- renv::paths$library()'
+        'stopifnot(dir.exists(project_library))'
+        '.libPaths(c(project_library, .libPaths()))'
+        'suppressPackageStartupMessages(library(DESeq2, lib.loc = project_library))'
+        'suppressPackageStartupMessages(library(apeglm, lib.loc = project_library))'
+        "cat('\nBIOAGENT_R_LIB=', normalizePath(project_library, mustWork = TRUE), '\n', sep = '')"
+    ) -join '; '
     $rOutput = @(& Rscript -e $rCheck)
-    if ($LASTEXITCODE -ne 0 -or $rOutput.Count -eq 0) {
+    if ($LASTEXITCODE -ne 0) {
         throw 'Project R packages are unavailable. Run Rscript -e "renv::restore(prompt = FALSE)" from this checkout first.'
     }
-    $env:R_LIBS = ([string]$rOutput[-1]).Trim()
-    if (-not $env:R_LIBS) { throw "The restored R library path is empty." }
+    $prefix = 'BIOAGENT_R_LIB='
+    $paths = @($rOutput |
+        Where-Object { ([string]$_).StartsWith($prefix, [StringComparison]::Ordinal) } |
+        ForEach-Object { ([string]$_).Substring($prefix.Length).Trim() })
+    if ($paths.Count -ne 1 -or -not $paths[0] -or
+        -not (Test-Path -LiteralPath $paths[0] -PathType Container)) {
+        throw "Rscript did not return a valid project R library path."
+    }
+    $env:R_LIBS = $paths[0]
     Write-Host "Starting Bio-Agent workbench on http://127.0.0.1:$Port"
     & uv run uvicorn bioagent.api.app:create_app --factory --host 127.0.0.1 --port $Port
     if ($LASTEXITCODE -ne 0) { throw "uvicorn stopped with exit code $LASTEXITCODE." }

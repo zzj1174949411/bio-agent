@@ -17,3 +17,4 @@
 **验收命令：** `uv run --no-sync --offline pytest tests/unit/test_workbench_start.py tests/unit/models tests/integration/api/test_model_profiles.py -q`。前端运行 `npm --prefix frontend run test -- --run`、`typecheck` 和 `build`。Python 运行 Ruff 和 `mypy src/bioagent`。Git 提交前通过 `pre-commit run --all-files` 和 `git diff --cached --check`。干净克隆和安全扫描记录写入父验收。
 
 - [x] 公开前复现并修复基础安装下的 CI 套件选择和 PDF 可选依赖类型检查，复跑启动与配置相关测试。公开候选从已清理历史构建，原私有记录独立保留。
+- [x] 复现 Windows PowerShell 在 CRLF 检出下的 R 启动参数截断，修复并验证真实项目库与隔离工作台启动。

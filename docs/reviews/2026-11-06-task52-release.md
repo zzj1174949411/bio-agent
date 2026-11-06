@@ -29,3 +29,8 @@
 - 干净 Windows 克隆的基础 Python 回归为 777 项通过、52 项跳过、1 项另行执行。跳过来自可选 RAG 依赖与 Windows 符号链接权限。真实 DESeq2 报告与下载校验两项通过，GitHub 前端作业通过。
 - GitHub 新克隆验证发现 pytest 临时目录缺失、Linux 类型检查看到 Windows 专用常量。补齐目录创建和平台判断，24 项检查脚本与 MCP 回归、Linux 目标 mypy 114 个源文件通过。
 - 公开候选保留已审查的功能提交，所有作者和提交者地址均为 GitHub no-reply 地址。旧分支、PR、日志和运行产物留在原私有仓库。
+
+## Windows 启动回归
+
+- 在 CRLF 检出的脚本上复现 Windows PowerShell 传递多行 `-e` 参数时，R 只执行首行并返回 0。改为单行表达式，只接收 R 探针带标记且实际存在的库目录。
+- 启动测试使用 CRLF 脚本，覆盖无关输出、尾随空行和缺少路径标记。6 项启动测试及 Ruff 通过。实际项目库探针通过，隔离克隆用 Windows PowerShell 启动后页面返回 HTTP 200。
